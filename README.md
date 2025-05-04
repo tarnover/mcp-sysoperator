@@ -8,12 +8,14 @@ A Model Context Protocol (MCP) server for Ansible automation. This server allows
 - **List Inventory**: View hosts and groups from an Ansible inventory file
 - **Check Syntax**: Validate Ansible playbook syntax without execution
 - **List Tasks**: Preview tasks that would be executed by a playbook
+- **Access Default Inventory**: Access the default Ansible inventory file via resource API
 
 ## Requirements
 
 - Node.js 18 or higher
 - npm or yarn
 - Ansible installed and in PATH
+- @modelcontextprotocol/sdk (installed automatically)
 
 ## Installation
 

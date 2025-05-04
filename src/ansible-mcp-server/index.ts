@@ -74,7 +74,7 @@ class AnsibleMcpServer {
     this.setupToolHandlers();
     
     // Error handling
-    this.server.onerror = (error) => console.error('[MCP Error]', error);
+    this.server.onerror = (error: Error) => console.error('[MCP Error]', error);
     process.on('SIGINT', async () => {
       await this.server.close();
       process.exit(0);
@@ -143,7 +143,7 @@ class AnsibleMcpServer {
           try {
             if (!existsSync(this.defaultInventoryPath)) {
               throw new McpError(
-                ErrorCode.ResourceNotFound,
+                ErrorCode.InvalidRequest,
                 'Default inventory file not found'
               );
             }
@@ -170,7 +170,7 @@ class AnsibleMcpServer {
         }
         
         throw new McpError(
-          ErrorCode.ResourceNotFound,
+          ErrorCode.InvalidRequest,
           `Unknown resource: ${request.params.uri}`
         );
       }
