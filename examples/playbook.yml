@@ -1,0 +1,185 @@
+---
+# Example Ansible playbook demonstrating various features 
+# for testing with the Ansible MCP Server
+
+- name: Web Server Setup
+  hosts: webservers
+  become: true
+  vars:
+    app_name: "example-app"
+    app_version: "1.0.0"
+    deploy_dir: "/var/www/app"
+    packages:
+      - nginx
+      - python3
+      - git
+
+  tasks:
+    - name: Update package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      tags:
+        - setup
+        - packages
+
+    - name: Install required packages
+      apt:
+        name: "{{ packages }}"
+        state: present
+      tags:
+        - setup
+        - packages
+
+    - name: Create deploy directory
+      file:
+        path: "{{ deploy_dir }}"
+        state: directory
+        owner: www-data
+        group: www-data
+        mode: '0755'
+      tags:
+        - setup
+        - deploy
+
+    - name: Configure Nginx
+      template:
+        src: templates/nginx.conf.j2
+        dest: /etc/nginx/sites-available/{{ app_name }}
+      notify: Restart Nginx
+      tags:
+        - config
+        - nginx
+
+    - name: Enable Nginx site
+      file:
+        src: /etc/nginx/sites-available/{{ app_name }}
+        dest: /etc/nginx/sites-enabled/{{ app_name }}
+        state: link
+      notify: Restart Nginx
+      tags:
+        - config
+        - nginx
+        
+    - name: Deploy application
+      git:
+        repo: https://github.com/example/repo.git
+        dest: "{{ deploy_dir }}"
+        version: "{{ app_version }}"
+      become_user: www-data
+      tags:
+        - deploy
+        
+    - name: Check application status
+      uri:
+        url: http://localhost
+        return_content: yes
+      register: app_status
+      ignore_errors: yes
+      tags:
+        - verify
+        
+    - name: Display application status
+      debug:
+        var: app_status
+      tags:
+        - verify
+
+  handlers:
+    - name: Restart Nginx
+      service:
+        name: nginx
+        state: restarted
+
+- name: Database Server Setup
+  hosts: dbservers
+  become: true
+  vars:
+    db_name: appdb
+    db_user: appuser
+    db_password: "{{ vault_db_password }}"  # Would be stored in a vault file
+
+  tasks:
+    - name: Install PostgreSQL
+      apt:
+        name:
+          - postgresql
+          - postgresql-contrib
+          - python3-psycopg2
+        state: present
+      tags:
+        - database
+        - setup
+
+    - name: Ensure PostgreSQL is running
+      service:
+        name: postgresql
+        state: started
+        enabled: yes
+      tags:
+        - database
+        - setup
+
+    - name: Create database
+      postgresql_db:
+        name: "{{ db_name }}"
+        state: present
+      become_user: postgres
+      tags:
+        - database
+        - setup
+
+    - name: Create database user
+      postgresql_user:
+        db: "{{ db_name }}"
+        name: "{{ db_user }}"
+        password: "{{ db_password }}"
+        priv: "ALL"
+        state: present
+      become_user: postgres
+      tags:
+        - database
+        - setup
+        
+    - name: Configure PostgreSQL to listen on all interfaces
+      lineinfile:
+        path: /etc/postgresql/12/main/postgresql.conf
+        regexp: "^#?listen_addresses\\s*="
+        line: "listen_addresses = '*'"
+      notify: Restart PostgreSQL
+      tags:
+        - database
+        - config
+
+  handlers:
+    - name: Restart PostgreSQL
+      service:
+        name: postgresql
+        state: restarted
+
+- name: Load Balancer Setup
+  hosts: loadbalancers
+  become: true
+  tasks:
+    - name: Install HAProxy
+      apt:
+        name: haproxy
+        state: present
+      tags:
+        - loadbalancer
+        - setup
+
+    - name: Configure HAProxy
+      template:
+        src: templates/haproxy.cfg.j2
+        dest: /etc/haproxy/haproxy.cfg
+      notify: Restart HAProxy
+      tags:
+        - loadbalancer
+        - config
+
+  handlers:
+    - name: Restart HAProxy
+      service:
+        name: haproxy
+        state: restarted

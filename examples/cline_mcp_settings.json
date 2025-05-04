@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "ansible": {
+      "command": "node",
+      "args": ["/absolute/path/to/mcp-ansible/build/index.js"],
+      "env": {},
+      "disabled": false,
+      "autoApprove": []
+    }
+  }
+}
