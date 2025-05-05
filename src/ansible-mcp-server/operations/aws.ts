@@ -1,6 +1,10 @@
-import { execSync } from 'child_process';
-import { writeFileSync, mkdirSync, unlinkSync } from 'fs';
-import { dirname } from 'path';
+import { AnsibleExecutionError } from '../common/errors.js';
+import { 
+  execAsync, 
+  createTempDirectory, 
+  writeTempFile, 
+  cleanupTempDirectory 
+} from '../common/utils.js';
 import { 
   EC2InstanceOptions, 
   S3Options, 
@@ -38,51 +42,8 @@ export {
   LambdaSchema,
   DynamicInventorySchema
 };
-import { AnsibleError, AwsCredentialsError } from '../common/errors.js';
+import { AnsibleError } from '../common/errors.js';
 import { verifyAwsCredentials } from '../common/utils.js';
-
-/**
- * Generate a temporary file path with timestamp to avoid collisions
- */
-const getTempFilePath = (prefix: string, extension: string = 'yml'): string => {
-  return `/tmp/${prefix}_${Date.now()}.${extension}`;
-};
-
-/**
- * Safely write content to a file, creating directories if needed
- */
-const safeWriteFile = (path: string, content: string): void => {
-  try {
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, content);
-  } catch (error: any) {
-    throw new AnsibleError(`Failed to write file ${path}: ${error.message}`);
-  }
-};
-
-/**
- * Execute an Ansible playbook and return the result
- */
-const executeAnsiblePlaybook = (playbookPath: string, extraParams: string = ''): string => {
-  try {
-    // Execute the playbook
-    const command = `ansible-playbook ${playbookPath} ${extraParams}`;
-    console.error(`Executing: ${command}`);
-    const result = execSync(command, { encoding: 'utf8' });
-    return result;
-  } catch (error: any) {
-    // Handle execution errors
-    const errorMessage = error.stderr || error.message || 'Unknown error';
-    throw new AnsibleError(`Ansible execution failed: ${errorMessage}`);
-  } finally {
-    // Cleanup - try to remove the temporary playbook file
-    try {
-      unlinkSync(playbookPath);
-    } catch (cleanupError) {
-      console.error(`Failed to clean up temporary file ${playbookPath}:`, cleanupError);
-    }
-  }
-};
 
 /**
  * Convert object to YAML-formatted string for Ansible playbook
@@ -93,19 +54,67 @@ const formatYamlParams = (params: Record<string, any>, indentation: number = 6):
     .filter(([_, value]) => value !== undefined && value !== null)
     .map(([key, value]) => {
       const indent = ' '.repeat(indentation);
+      let formattedValue;
       
       // Format based on value type
       if (typeof value === 'string') {
-        return `${indent}${key}: "${value}"`;
-      } else if (Array.isArray(value)) {
-        return `${indent}${key}: ${JSON.stringify(value)}`;
-      } else if (typeof value === 'object') {
-        return `${indent}${key}: ${JSON.stringify(value)}`;
+        // Basic YAML string escaping (double quotes, escape backslashes and double quotes)
+        formattedValue = `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+      } else if (Array.isArray(value) || typeof value === 'object') {
+        // Use JSON.stringify for arrays and objects, assuming it's valid YAML subset
+        formattedValue = JSON.stringify(value); 
+      } else {
+        formattedValue = value; // Numbers, booleans
       }
-      return `${indent}${key}: ${value}`;
+      return `${indent}${key}: ${formattedValue}`;
     })
     .join('\n');
 };
+
+/**
+ * Helper function to execute a dynamically generated AWS playbook
+ */
+async function executeAwsPlaybook(
+  operationName: string, 
+  playbookContent: string, 
+  extraParams: string = '',
+  tempFiles: { filename: string, content: string }[] = [] // For additional files like templates, policies
+): Promise<string> {
+  let tempDir: string | undefined;
+  try {
+    // Create a unique temporary directory
+    tempDir = await createTempDirectory(`ansible-aws-${operationName}`);
+    
+    // Write the main playbook file
+    const playbookPath = await writeTempFile(tempDir, 'playbook.yml', playbookContent);
+    
+    // Write any additional temporary files
+    for (const file of tempFiles) {
+      await writeTempFile(tempDir, file.filename, file.content);
+    }
+
+    // Build the command
+    const command = `ansible-playbook ${playbookPath} ${extraParams}`;
+    console.error(`Executing: ${command}`);
+
+    // Execute the playbook asynchronously
+    const { stdout, stderr } = await execAsync(command);
+    
+    // Return stdout, or a success message if stdout is empty
+    return stdout || `${operationName} completed successfully (no output).`;
+
+  } catch (error: any) {
+    // Handle execution errors
+    const errorMessage = error.stderr || error.message || 'Unknown error';
+    throw new AnsibleExecutionError(`Ansible execution failed for ${operationName}: ${errorMessage}`, error.stderr);
+  } finally {
+    // Ensure cleanup happens even if errors occur
+    if (tempDir) {
+      await cleanupTempDirectory(tempDir);
+    }
+  }
+}
+
 
 /**
  * EC2 Instance Operations
@@ -115,9 +124,6 @@ export async function ec2InstanceOperations(args: EC2InstanceOptions): Promise<s
 
   const { action, region, instanceIds, filters, instanceType, imageId, keyName, securityGroups, userData, count, tags, waitForCompletion, terminationProtection, ...restParams } = args;
 
-  // Create temporary playbook file
-  const playbookPath = getTempFilePath('aws_ec2');
-  
   let playbookContent = `---
 - name: AWS EC2 ${action} operation
   hosts: localhost
@@ -210,14 +216,12 @@ ${formatYamlParams({
       break;
       
     default:
-      throw new AnsibleError(`Unknown EC2 action: ${action}`);
+      // Should be caught by Zod validation, but good to have a fallback
+      throw new AnsibleError(`Unsupported EC2 action: ${action}`);
   }
   
-  // Write playbook to file
-  safeWriteFile(playbookPath, playbookContent);
-  
-  // Execute the playbook
-  return executeAnsiblePlaybook(playbookPath);
+  // Execute the generated playbook
+  return executeAwsPlaybook(`ec2-${action}`, playbookContent);
 }
 
 /**
@@ -228,9 +232,6 @@ export async function s3Operations(args: S3Options): Promise<string> {
 
   const { action, region, bucket, objectKey, localPath, acl, tags, metadata, contentType } = args;
 
-  // Create temporary playbook file
-  const playbookPath = getTempFilePath('aws_s3');
-  
   let playbookContent = `---
 - name: AWS S3 ${action} operation
   hosts: localhost
@@ -329,14 +330,11 @@ ${formatYamlParams({ acl, tags, metadata, content_type: contentType })}
       break;
       
     default:
-      throw new AnsibleError(`Unknown S3 action: ${action}`);
+      throw new AnsibleError(`Unsupported S3 action: ${action}`);
   }
   
-  // Write playbook to file
-  safeWriteFile(playbookPath, playbookContent);
-  
-  // Execute the playbook
-  return executeAnsiblePlaybook(playbookPath);
+  // Execute the generated playbook
+  return executeAwsPlaybook(`s3-${action}`, playbookContent);
 }
 
 /**
@@ -347,9 +345,6 @@ export async function vpcOperations(args: VPCOptions): Promise<string> {
 
   const { action, region, vpcId, cidrBlock, name, dnsSupport, dnsHostnames, tags, subnets } = args;
 
-  // Create temporary playbook file
-  const playbookPath = getTempFilePath('aws_vpc');
-  
   let playbookContent = `---
 - name: AWS VPC ${action} operation
   hosts: localhost
@@ -426,14 +421,11 @@ ${subnets.map((subnet) => `        - ${JSON.stringify(subnet)}`).join('\n')}
       break;
       
     default:
-      throw new AnsibleError(`Unknown VPC action: ${action}`);
+      throw new AnsibleError(`Unsupported VPC action: ${action}`);
   }
   
-  // Write playbook to file
-  safeWriteFile(playbookPath, playbookContent);
-  
-  // Execute the playbook
-  return executeAnsiblePlaybook(playbookPath);
+  // Execute the generated playbook
+  return executeAwsPlaybook(`vpc-${action}`, playbookContent);
 }
 
 /**
@@ -444,15 +436,20 @@ export async function cloudFormationOperations(args: CloudFormationOptions): Pro
 
   const { action, region, stackName, templateBody, templateUrl, parameters, capabilities, tags } = args;
 
-  // Create temporary playbook file
-  const playbookPath = getTempFilePath('aws_cloudformation');
-  const templatePath = templateBody ? getTempFilePath('aws_cfn_template') : undefined;
-  
-  // If template body is provided, write it to a file
-  if (templateBody && templatePath) {
-    safeWriteFile(templatePath, templateBody);
+  const tempFiles: { filename: string, content: string }[] = [];
+  let templateParam = '';
+
+  if (templateBody) {
+    // Prepare template body to be written to a temp file
+    tempFiles.push({ filename: 'template.cfn', content: templateBody });
+    templateParam = 'template: "template.cfn"'; // Reference the temp file name
+  } else if (templateUrl) {
+    templateParam = `template_url: "${templateUrl}"`;
+  } else if (action === 'create' || action === 'update') {
+    // Template is required for create/update
+    throw new AnsibleError('Either templateBody or templateUrl must be provided for CloudFormation create/update actions.');
   }
-  
+
   let playbookContent = `---
 - name: AWS CloudFormation ${action} operation
   hosts: localhost
@@ -475,28 +472,23 @@ export async function cloudFormationOperations(args: CloudFormationOptions): Pro
       
     case 'create':
     case 'update':
-      // Use either template file or URL
-      const templateParam = templatePath 
-        ? `template: "${templatePath}"` 
-        : `template_url: "${templateUrl}"`;
-      
       playbookContent += `
     - name: ${action === 'create' ? 'Create' : 'Update'} CloudFormation stack
       amazon.aws.cloudformation:
         region: "${region}"
         stack_name: "${stackName}"
         state: present
-        ${templateParam}
+        ${templateParam} # Use the determined template parameter
 ${formatYamlParams({
   template_parameters: parameters,
   capabilities,
   tags
 })}
-      register: cfn_create
+      register: cfn_result
     
-    - name: Display stack outputs
+    - name: Display stack outputs/result
       debug:
-        var: cfn_create.stack_outputs`;
+        var: cfn_result`;
       break;
       
     case 'delete':
@@ -514,25 +506,11 @@ ${formatYamlParams({
       break;
       
     default:
-      throw new AnsibleError(`Unknown CloudFormation action: ${action}`);
+      throw new AnsibleError(`Unsupported CloudFormation action: ${action}`);
   }
   
-  // Write playbook to file
-  safeWriteFile(playbookPath, playbookContent);
-  
-  // Execute the playbook
-  const result = executeAnsiblePlaybook(playbookPath);
-  
-  // Clean up template file if it was created
-  if (templatePath) {
-    try {
-      unlinkSync(templatePath);
-    } catch (cleanupError) {
-      console.error(`Failed to clean up temporary template file ${templatePath}:`, cleanupError);
-    }
-  }
-  
-  return result;
+  // Execute the generated playbook, passing template body if needed
+  return executeAwsPlaybook(`cloudformation-${action}`, playbookContent, '', tempFiles);
 }
 
 /**
@@ -541,22 +519,24 @@ ${formatYamlParams({
 export async function iamOperations(args: IAMOptions): Promise<string> {
   await verifyAwsCredentials();
 
-  const { action, region, name, policyName, policyDocument, path, roleName, assumeRolePolicyDocument, managedPolicies } = args;
+  const { action, region, policyName, policyDocument, path, roleName, assumeRolePolicyDocument, managedPolicies } = args;
 
-  // Create temporary playbook file
-  const playbookPath = getTempFilePath('aws_iam');
-  const policyDocPath = policyDocument ? getTempFilePath('aws_iam_policy', 'json') : undefined;
-  const assumeRoleDocPath = assumeRolePolicyDocument ? getTempFilePath('aws_iam_assume_role', 'json') : undefined;
-  
-  // Write policy documents to files if provided
-  if (policyDocument && policyDocPath) {
-    safeWriteFile(policyDocPath, JSON.stringify(policyDocument, null, 2));
+  const tempFiles: { filename: string, content: string }[] = [];
+  let policyDocParam = '';
+  let assumeRoleDocParam = '';
+
+  if (policyDocument) {
+    const policyFilename = 'policy.json';
+    tempFiles.push({ filename: policyFilename, content: JSON.stringify(policyDocument, null, 2) });
+    policyDocParam = `policy_document: "{{ lookup('file', '${policyFilename}') }}"`;
   }
-  
-  if (assumeRolePolicyDocument && assumeRoleDocPath) {
-    safeWriteFile(assumeRoleDocPath, JSON.stringify(assumeRolePolicyDocument, null, 2));
+
+  if (assumeRolePolicyDocument) {
+    const assumeRoleFilename = 'assume_role_policy.json';
+    tempFiles.push({ filename: assumeRoleFilename, content: JSON.stringify(assumeRolePolicyDocument, null, 2) });
+    assumeRoleDocParam = `assume_role_policy_document: "{{ lookup('file', '${assumeRoleFilename}') }}"`;
   }
-  
+
   let playbookContent = `---
 - name: AWS IAM ${action} operation
   hosts: localhost
@@ -595,17 +575,17 @@ export async function iamOperations(args: IAMOptions): Promise<string> {
       amazon.aws.iam_role:
         region: "${region}"
         name: "${roleName}"
-        assume_role_policy_document: ${assumeRoleDocPath ? `"{{ lookup('file', '${assumeRoleDocPath}') }}"` : ''}
+        ${assumeRoleDocParam}
         state: present
 ${formatYamlParams({
   path,
   managed_policies: managedPolicies
 })}
-      register: iam_role
+      register: iam_result
     
     - name: Display role details
       debug:
-        var: iam_role`;
+        var: iam_result`;
       break;
       
     case 'create_policy':
@@ -614,14 +594,14 @@ ${formatYamlParams({
       amazon.aws.iam_policy:
         region: "${region}"
         policy_name: "${policyName}"
-        policy_document: ${policyDocPath ? `"{{ lookup('file', '${policyDocPath}') }}"` : ''}
+        ${policyDocParam}
         state: present
 ${formatYamlParams({ path })}
-      register: iam_policy
+      register: iam_result
     
     - name: Display policy details
       debug:
-        var: iam_policy`;
+        var: iam_result`;
       break;
       
     case 'delete_role':
@@ -653,27 +633,11 @@ ${formatYamlParams({ path })}
       break;
       
     default:
-      throw new AnsibleError(`Unknown IAM action: ${action}`);
+      throw new AnsibleError(`Unsupported IAM action: ${action}`);
   }
   
-  // Write playbook to file
-  safeWriteFile(playbookPath, playbookContent);
-  
-  // Execute the playbook
-  const result = executeAnsiblePlaybook(playbookPath);
-  
-  // Clean up policy doc files if they were created
-  [policyDocPath, assumeRoleDocPath].forEach(path => {
-    if (path) {
-      try {
-        unlinkSync(path);
-      } catch (cleanupError) {
-        console.error(`Failed to clean up temporary file ${path}:`, cleanupError);
-      }
-    }
-  });
-  
-  return result;
+  // Execute the generated playbook, passing policy docs if needed
+  return executeAwsPlaybook(`iam-${action}`, playbookContent, '', tempFiles);
 }
 
 /**
@@ -683,11 +647,8 @@ export async function rdsOperations(args: RDSOptions): Promise<string> {
   await verifyAwsCredentials();
 
   const { action, region, dbInstanceIdentifier, dbEngine, dbInstanceClass, allocatedStorage, masterUsername, 
-    masterPassword, vpcSecurityGroupIds, dbSubnetGroupName, tags, multiAZ, backupRetentionPeriod } = args;
+    masterPassword, vpcSecurityGroupIds, dbSubnetGroupName, tags, multiAZ, backupRetentionPeriod, skipFinalSnapshot } = args;
 
-  // Create temporary playbook file
-  const playbookPath = getTempFilePath('aws_rds');
-  
   let playbookContent = `---
 - name: AWS RDS ${action} operation
   hosts: localhost
@@ -725,13 +686,14 @@ ${formatYamlParams({
   db_subnet_group_name: dbSubnetGroupName,
   tags,
   multi_az: multiAZ,
-  backup_retention_period: backupRetentionPeriod
+  backup_retention_period: backupRetentionPeriod,
+  // Add other relevant RDS params here if needed
 })}
-      register: rds_create
+      register: rds_result
     
     - name: Display RDS instance details
       debug:
-        var: rds_create`;
+        var: rds_result`;
       break;
       
     case 'delete':
@@ -741,7 +703,7 @@ ${formatYamlParams({
         region: "${region}"
         db_instance_identifier: "${dbInstanceIdentifier}"
         state: absent
-        skip_final_snapshot: true
+        skip_final_snapshot: ${skipFinalSnapshot ? 'yes' : 'no'}
       register: rds_delete
     
     - name: Display deletion result
@@ -778,14 +740,11 @@ ${formatYamlParams({
       break;
       
     default:
-      throw new AnsibleError(`Unknown RDS action: ${action}`);
+      throw new AnsibleError(`Unsupported RDS action: ${action}`);
   }
   
-  // Write playbook to file
-  safeWriteFile(playbookPath, playbookContent);
-  
-  // Execute the playbook
-  return executeAnsiblePlaybook(playbookPath);
+  // Execute the generated playbook
+  return executeAwsPlaybook(`rds-${action}`, playbookContent);
 }
 
 /**
@@ -794,11 +753,8 @@ ${formatYamlParams({
 export async function route53Operations(args: Route53Options): Promise<string> {
   await verifyAwsCredentials();
 
-  const { action, region, zoneId, zoneName, recordName, recordType, recordTtl, recordValue, recordState } = args;
+  const { action, region, zoneId, zoneName, recordName, recordType, recordTtl, recordValue, recordState, comment } = args;
 
-  // Create temporary playbook file
-  const playbookPath = getTempFilePath('aws_route53');
-  
   let playbookContent = `---
 - name: AWS Route53 ${action} operation
   hosts: localhost
@@ -841,11 +797,12 @@ export async function route53Operations(args: Route53Options): Promise<string> {
         region: "${region}"
         zone: "${zoneName}"
         state: present
-      register: route53_zone
+${formatYamlParams({ comment })}
+      register: route53_result
     
     - name: Display zone details
       debug:
-        var: route53_zone`;
+        var: route53_result`;
       break;
       
     case 'create_record':
@@ -856,14 +813,15 @@ export async function route53Operations(args: Route53Options): Promise<string> {
         zone: "${zoneName}"
         record: "${recordName}"
         type: "${recordType}"
-        ttl: ${recordTtl || 300}
+        ttl: ${recordTtl ?? 300}
         value: ${JSON.stringify(Array.isArray(recordValue) ? recordValue : [recordValue])}
-        state: ${recordState || 'present'}
-      register: route53_record
+        state: ${recordState ?? 'present'}
+${formatYamlParams({ comment })}
+      register: route53_result
     
     - name: Display record details
       debug:
-        var: route53_record`;
+        var: route53_result`;
       break;
       
     case 'delete_record':
@@ -874,13 +832,14 @@ export async function route53Operations(args: Route53Options): Promise<string> {
         zone: "${zoneName}"
         record: "${recordName}"
         type: "${recordType}"
-        value: ${JSON.stringify(Array.isArray(recordValue) ? recordValue : [recordValue])}
+        # Value might be needed for deletion depending on the record type/setup
+        value: ${JSON.stringify(Array.isArray(recordValue) ? recordValue : [recordValue])} 
         state: absent
-      register: route53_record_delete
+      register: route53_delete
     
     - name: Display deletion result
       debug:
-        var: route53_record_delete`;
+        var: route53_delete`;
       break;
       
     case 'delete_zone':
@@ -898,14 +857,11 @@ export async function route53Operations(args: Route53Options): Promise<string> {
       break;
       
     default:
-      throw new AnsibleError(`Unknown Route53 action: ${action}`);
+      throw new AnsibleError(`Unsupported Route53 action: ${action}`);
   }
   
-  // Write playbook to file
-  safeWriteFile(playbookPath, playbookContent);
-  
-  // Execute the playbook
-  return executeAnsiblePlaybook(playbookPath);
+  // Execute the generated playbook
+  return executeAwsPlaybook(`route53-${action}`, playbookContent);
 }
 
 /**
@@ -914,15 +870,30 @@ export async function route53Operations(args: Route53Options): Promise<string> {
 export async function elbOperations(args: ELBOptions): Promise<string> {
   await verifyAwsCredentials();
 
-  const { action, region, name, lbType, scheme, subnets, securityGroups, listeners, healthCheck, tags } = args;
+  const { action, region, name, lbType = 'application', scheme, subnets, securityGroups, listeners, healthCheck, tags, targetGroups } = args;
 
-  // Create temporary playbook file
-  const playbookPath = getTempFilePath('aws_elb');
-  
-  let moduleType = lbType === 'application' || lbType === 'network' ? 'elb_application_lb' : 'elb_classic_lb';
-  
+  // Determine module based on lbType
+  let moduleName: string;
+  let infoModuleName: string;
+  switch (lbType) {
+    case 'application':
+      moduleName = 'amazon.aws.elb_application_lb';
+      infoModuleName = 'amazon.aws.elb_application_lb_info';
+      break;
+    case 'network':
+      moduleName = 'amazon.aws.elb_network_lb';
+      infoModuleName = 'amazon.aws.elb_network_lb_info';
+      break;
+    case 'classic':
+      moduleName = 'amazon.aws.elb_classic_lb';
+      infoModuleName = 'amazon.aws.elb_classic_lb_info';
+      break;
+    default:
+      throw new AnsibleError(`Unsupported ELB type: ${lbType}`);
+  }
+
   let playbookContent = `---
-- name: AWS ELB ${action} operation
+- name: AWS ELB ${action} operation (${lbType})
   hosts: localhost
   connection: local
   gather_facts: no
@@ -931,20 +902,20 @@ export async function elbOperations(args: ELBOptions): Promise<string> {
   switch (action) {
     case 'list':
       playbookContent += `
-    - name: List load balancers
-      amazon.aws.${lbType === 'application' || lbType === 'network' ? 'elb_application_lb_info' : 'elb_classic_lb_info'}:
+    - name: List ${lbType} load balancers
+      ${infoModuleName}:
         region: "${region}"
       register: elb_info
     
     - name: Display load balancers
       debug:
-        var: elb_info`;
+        var: elb_info`; // Adjust var based on actual module output if needed
       break;
       
     case 'create':
       playbookContent += `
-    - name: Create load balancer
-      amazon.aws.${moduleType}:
+    - name: Create ${lbType} load balancer
+      ${moduleName}:
         region: "${region}"
         name: "${name}"
         state: present
@@ -952,21 +923,22 @@ ${formatYamlParams({
   scheme,
   subnets,
   security_groups: securityGroups,
-  listeners,
-  health_check: healthCheck,
-  tags
+  listeners, // May need adjustment for different LB types
+  health_check: healthCheck, // May need adjustment
+  tags,
+  target_groups: targetGroups // For Application/Network LBs
 })}
-      register: elb_create
+      register: elb_result
     
     - name: Display load balancer details
       debug:
-        var: elb_create`;
+        var: elb_result`;
       break;
       
     case 'delete':
       playbookContent += `
-    - name: Delete load balancer
-      amazon.aws.${moduleType}:
+    - name: Delete ${lbType} load balancer
+      ${moduleName}:
         region: "${region}"
         name: "${name}"
         state: absent
@@ -978,14 +950,11 @@ ${formatYamlParams({
       break;
       
     default:
-      throw new AnsibleError(`Unknown ELB action: ${action}`);
+      throw new AnsibleError(`Unsupported ELB action: ${action}`);
   }
   
-  // Write playbook to file
-  safeWriteFile(playbookPath, playbookContent);
-  
-  // Execute the playbook
-  return executeAnsiblePlaybook(playbookPath);
+  // Execute the generated playbook
+  return executeAwsPlaybook(`elb-${action}`, playbookContent);
 }
 
 /**
@@ -994,17 +963,30 @@ ${formatYamlParams({
 export async function lambdaOperations(args: LambdaOptions): Promise<string> {
   await verifyAwsCredentials();
 
-  const { action, region, name, zipFile, s3Bucket, s3Key, functionCode, runtime, handler, role, description, timeout, memorySize, environment, tags } = args;
+  const { action, region, name, zipFile, s3Bucket, s3Key, functionCode, runtime, handler, role, description, timeout, memorySize, environment, tags, payload } = args;
 
-  // Create temporary playbook file
-  const playbookPath = getTempFilePath('aws_lambda');
-  const codeFilePath = functionCode ? getTempFilePath('aws_lambda_code', 'py') : undefined;
-  
-  // Write function code to file if provided
-  if (functionCode && codeFilePath) {
-    safeWriteFile(codeFilePath, functionCode);
+  const tempFiles: { filename: string, content: string }[] = [];
+  let codeParams = '';
+  let zipPath: string | undefined; // To track zip file for cleanup
+
+  if (zipFile) {
+    // Assuming zipFile is a path accessible to the server running this code
+    codeParams = `zip_file: "${zipFile}"`; 
+  } else if (s3Bucket && s3Key) {
+    codeParams = `s3_bucket: "${s3Bucket}"\n        s3_key: "${s3Key}"`;
+  } else if (functionCode) {
+    // If code is provided directly, write it to a temp file and prepare to zip it
+    const codeFilename = 'lambda_function.py'; // Assuming Python, adjust if needed
+    tempFiles.push({ filename: codeFilename, content: functionCode });
+    
+    // We'll need to zip this file before executing Ansible
+    // This requires the 'zip' utility on the server
+    zipPath = 'lambda_function.zip'; // Relative path within temp dir
+    codeParams = `zip_file: "${zipPath}"`; 
+  } else if (action === 'create' || action === 'update') {
+    throw new AnsibleError('Lambda code source (zipFile, S3, or functionCode) must be provided for create/update actions.');
   }
-  
+
   let playbookContent = `---
 - name: AWS Lambda ${action} operation
   hosts: localhost
@@ -1027,30 +1009,13 @@ export async function lambdaOperations(args: LambdaOptions): Promise<string> {
       
     case 'create':
     case 'update':
-      let codeParams = '';
-      if (zipFile) {
-        codeParams = `zip_file: "${zipFile}"`;
-      } else if (s3Bucket && s3Key) {
-        codeParams = `s3_bucket: "${s3Bucket}"\n        s3_key: "${s3Key}"`;
-      } else if (codeFilePath) {
-        // Zip the file if code was provided directly
-        const zipPath = getTempFilePath('lambda_function', 'zip');
-        const zipCommand = `cd $(dirname "${codeFilePath}") && zip -j "${zipPath}" "${codeFilePath}"`;
-        try {
-          execSync(zipCommand);
-          codeParams = `zip_file: "${zipPath}"`;
-        } catch (error) {
-          throw new AnsibleError(`Failed to create zip file for Lambda function: ${error}`);
-        }
-      }
-      
       playbookContent += `
     - name: ${action === 'create' ? 'Create' : 'Update'} Lambda function
       amazon.aws.lambda:
         region: "${region}"
         name: "${name}"
         state: present
-        ${codeParams}
+        ${codeParams} # Use determined code source params
 ${formatYamlParams({
   runtime,
   handler,
@@ -1061,11 +1026,11 @@ ${formatYamlParams({
   environment_variables: environment,
   tags
 })}
-      register: lambda_create
+      register: lambda_result
     
     - name: Display function details
       debug:
-        var: lambda_create`;
+        var: lambda_result`;
       break;
       
     case 'delete':
@@ -1088,7 +1053,8 @@ ${formatYamlParams({
       amazon.aws.lambda_invoke:
         region: "${region}"
         function_name: "${name}"
-        invocation_type: RequestResponse
+        invocation_type: RequestResponse # Or Event, DryRun
+${formatYamlParams({ payload })}
       register: lambda_invoke
     
     - name: Display invocation result
@@ -1097,25 +1063,48 @@ ${formatYamlParams({
       break;
       
     default:
-      throw new AnsibleError(`Unknown Lambda action: ${action}`);
+      throw new AnsibleError(`Unsupported Lambda action: ${action}`);
   }
-  
-  // Write playbook to file
-  safeWriteFile(playbookPath, playbookContent);
-  
-  // Execute the playbook
-  const result = executeAnsiblePlaybook(playbookPath);
-  
-  // Clean up code file if it was created
-  if (codeFilePath) {
-    try {
-      unlinkSync(codeFilePath);
-    } catch (cleanupError) {
-      console.error(`Failed to clean up temporary code file ${codeFilePath}:`, cleanupError);
+
+  // Special handling for zipping code before executing Ansible
+  let tempDir: string | undefined;
+  try {
+    tempDir = await createTempDirectory(`ansible-aws-lambda-${action}`);
+    
+    // Write the main playbook file
+    const playbookPath = await writeTempFile(tempDir, 'playbook.yml', playbookContent);
+    
+    // Write any additional temporary files (like the function code)
+    for (const file of tempFiles) {
+      await writeTempFile(tempDir, file.filename, file.content);
+    }
+
+    // If we need to zip the code, do it now using execAsync
+    if (zipPath && tempFiles.some(f => f.filename === 'lambda_function.py')) {
+      const codeFilePath = `${tempDir}/lambda_function.py`;
+      const zipFilePath = `${tempDir}/${zipPath}`;
+      const zipCommand = `zip -j "${zipFilePath}" "${codeFilePath}"`; 
+      console.error(`Executing: ${zipCommand}`);
+      await execAsync(zipCommand, { cwd: tempDir }); // Run zip in the temp directory
+    }
+
+    // Build the final Ansible command
+    const command = `ansible-playbook ${playbookPath}`;
+    console.error(`Executing: ${command}`);
+
+    // Execute the playbook asynchronously
+    const { stdout, stderr } = await execAsync(command);
+    
+    return stdout || `Lambda ${action} completed successfully (no output).`;
+
+  } catch (error: any) {
+    const errorMessage = error.stderr || error.message || 'Unknown error';
+    throw new AnsibleExecutionError(`Ansible execution failed for lambda-${action}: ${errorMessage}`, error.stderr);
+  } finally {
+    if (tempDir) {
+      await cleanupTempDirectory(tempDir);
     }
   }
-  
-  return result;
 }
 
 /**
@@ -1124,11 +1113,8 @@ ${formatYamlParams({
 export async function dynamicInventoryOperations(args: DynamicInventoryOptions): Promise<string> {
   await verifyAwsCredentials();
 
-  const { region, filters, hostnames, keyed_groups } = args;
+  const { region, filters, hostnames, keyed_groups, compose } = args;
 
-  // Create temporary inventory file
-  const inventoryPath = getTempFilePath('aws_dynamic_inventory', 'yml');
-  
   let inventoryContent = `---
 plugin: amazon.aws.aws_ec2
 regions:
@@ -1137,42 +1123,63 @@ regions:
   if (filters) {
     inventoryContent += `
 filters:
-${Object.entries(filters).map(([key, value]) => `  ${key}: ${JSON.stringify(value)}`).join('\n')}`;
+${formatYamlParams(filters, 2)}`; // Indent level 2 for filters
   }
 
-  if (hostnames) {
+  if (hostnames && hostnames.length > 0) {
     inventoryContent += `
 hostnames:
-  - ${hostnames}`;
+${hostnames.map(h => `  - ${JSON.stringify(h)}`).join('\n')}`;
   }
 
   if (keyed_groups && keyed_groups.length > 0) {
     inventoryContent += `
 keyed_groups:
-${keyed_groups.map(group => `  - ${group}`).join('\n')}`;
+${keyed_groups.map(group => `  - prefix: ${group.prefix}\n    key: ${group.key}\n    separator: ${group.separator ?? ''}`).join('\n')}`;
+  }
+  
+  if (compose) {
+    inventoryContent += `
+compose:
+${formatYamlParams(compose, 2)}`; // Indent level 2 for compose
   }
 
-  // Write inventory to file
-  safeWriteFile(inventoryPath, inventoryContent);
-  
-  // Create a temporary playbook to use the dynamic inventory
-  const playbookPath = getTempFilePath('aws_dynamic_inventory_test');
-  
-  const playbookContent = `---
+  // This operation doesn't run a playbook, it *generates* an inventory file
+  // and then tests it. We'll adapt the helper pattern slightly.
+  let tempDir: string | undefined;
+  try {
+    tempDir = await createTempDirectory('ansible-aws-dyninv');
+    const inventoryPath = await writeTempFile(tempDir, 'inventory.aws_ec2.yml', inventoryContent);
+
+    // Create a simple test playbook
+    const testPlaybookContent = `---
 - name: Test AWS Dynamic Inventory
-  hosts: localhost
-  connection: local
+  hosts: all # Target hosts defined by the dynamic inventory
   gather_facts: no
   tasks:
-    - name: Display AWS EC2 dynamic inventory
-      ansible.builtin.debug:
-        msg: "Successfully created AWS EC2 dynamic inventory at ${inventoryPath}"`;
-  
-  // Write playbook to file
-  safeWriteFile(playbookPath, playbookContent);
-  
-  // Execute the playbook
-  const result = executeAnsiblePlaybook(playbookPath, `-i ${inventoryPath} --list-hosts all`);
-  
-  return `Dynamic Inventory created at ${inventoryPath}\n\n${result}`;
+    - name: Ping hosts found by dynamic inventory
+      ansible.builtin.ping:`;
+
+    const testPlaybookPath = await writeTempFile(tempDir, 'test_playbook.yml', testPlaybookContent);
+
+    // Execute ansible-inventory --list first to show the structure
+    const listCommand = `ansible-inventory -i ${inventoryPath} --list`;
+    console.error(`Executing: ${listCommand}`);
+    const listResult = await execAsync(listCommand);
+
+    // Execute the test playbook using the dynamic inventory
+    const runCommand = `ansible-playbook -i ${inventoryPath} ${testPlaybookPath}`;
+    console.error(`Executing: ${runCommand}`);
+    const runResult = await execAsync(runCommand);
+
+    return `Dynamic Inventory (${inventoryPath}) Content:\n${inventoryContent}\n\nInventory List Output:\n${listResult.stdout}\n\nPlaybook Test Output:\n${runResult.stdout}`;
+
+  } catch (error: any) {
+    const errorMessage = error.stderr || error.message || 'Unknown error';
+    throw new AnsibleExecutionError(`Failed dynamic inventory operation: ${errorMessage}`, error.stderr);
+  } finally {
+    if (tempDir) {
+      await cleanupTempDirectory(tempDir);
+    }
+  }
 }

@@ -1,7 +1,9 @@
 import { existsSync } from 'fs';
-import { resolve } from 'path';
+import { mkdtemp, writeFile, rm } from 'fs/promises';
+import { resolve, join } from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { tmpdir } from 'os';
 import { 
   AnsiblePlaybookNotFoundError, 
   AnsibleInventoryNotFoundError, 
@@ -54,6 +56,51 @@ export async function checkAnsibleInstalled(): Promise<boolean> {
     return true;
   } catch (error) {
     return false;
+  }
+}
+
+/**
+ * Creates a unique temporary directory.
+ * @param prefix A prefix for the temporary directory name.
+ * @returns Promise resolving to the path of the created temporary directory.
+ */
+export async function createTempDirectory(prefix: string): Promise<string> {
+  const tempDirPrefix = join(tmpdir(), `${prefix}-`);
+  try {
+    const tempDirPath = await mkdtemp(tempDirPrefix);
+    return tempDirPath;
+  } catch (error: any) {
+    throw new Error(`Failed to create temporary directory: ${error.message}`);
+  }
+}
+
+/**
+ * Writes content to a file within a specified temporary directory.
+ * @param tempDir The temporary directory path.
+ * @param filename The name of the file to create.
+ * @param content The content to write to the file.
+ * @returns Promise resolving to the full path of the written file.
+ */
+export async function writeTempFile(tempDir: string, filename: string, content: string): Promise<string> {
+  const filePath = join(tempDir, filename);
+  try {
+    await writeFile(filePath, content, 'utf-8');
+    return filePath;
+  } catch (error: any) {
+    throw new Error(`Failed to write temporary file ${filePath}: ${error.message}`);
+  }
+}
+
+/**
+ * Removes a temporary directory and all its contents.
+ * @param tempDir The path of the temporary directory to remove.
+ */
+export async function cleanupTempDirectory(tempDir: string): Promise<void> {
+  try {
+    await rm(tempDir, { recursive: true, force: true });
+  } catch (error: any) {
+    // Log cleanup errors but don't throw, as the main operation might have succeeded
+    console.error(`Failed to clean up temporary directory ${tempDir}: ${error.message}`);
   }
 }
 

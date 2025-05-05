@@ -43,16 +43,3 @@ export async function listInventory(options: ListInventoryOptions): Promise<stri
     );
   }
 }
-
-/**
- * Gets the default inventory content if it exists
- * @param defaultInventoryPath Path to the default inventory file
- * @returns Content of the default inventory file
- * @throws Error if the file cannot be read
- */
-export function getDefaultInventoryContent(defaultInventoryPath: string): string {
-  // This function would read the default inventory file content
-  // Implementation would depend on how your server handles file reading
-  // For now, we'll leave it as a placeholder
-  return '';
-}

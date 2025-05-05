@@ -39,11 +39,114 @@ import * as adHoc from './operations/ad_hoc.js';
 import * as vault from './operations/vault.js';
 import * as aws from './operations/aws.js';
 
+// Define a type for the tool handler functions
+type ToolHandler = (args: any) => Promise<string>;
+
+// Define the structure for tool definitions, including schema and handler
+interface ToolDefinition {
+  description: string;
+  schema: z.ZodType<any, any>;
+  handler: ToolHandler;
+}
+
+// Map tool names to their definitions (schema and handler)
+const toolDefinitions: Record<string, ToolDefinition> = {
+  run_playbook: {
+    description: 'Run an Ansible playbook',
+    schema: RunPlaybookSchema,
+    handler: playbooks.runPlaybook,
+  },
+  list_inventory: {
+    description: 'List Ansible inventory hosts and groups',
+    schema: ListInventorySchema,
+    handler: inventory.listInventory,
+  },
+  check_syntax: {
+    description: 'Check syntax of an Ansible playbook without executing it',
+    schema: CheckSyntaxSchema,
+    handler: playbooks.checkSyntax,
+  },
+  list_tasks: {
+    description: 'List all tasks that would be executed by a playbook',
+    schema: ListTasksSchema,
+    handler: playbooks.listTasks,
+  },
+  run_ad_hoc: {
+    description: 'Run an Ansible ad-hoc command against specified hosts',
+    schema: RunAdHocSchema,
+    handler: adHoc.runAdHoc,
+  },
+  vault_encrypt_string: {
+    description: 'Encrypt a string using Ansible Vault',
+    schema: VaultEncryptStringSchema,
+    handler: vault.encryptString,
+  },
+  vault_decrypt_string: {
+    description: 'Decrypt a string encrypted with Ansible Vault',
+    schema: VaultDecryptStringSchema,
+    handler: vault.decryptString,
+  },
+  // AWS Tools
+  aws_ec2: {
+    description: 'Manage AWS EC2 instances (list, create, start, stop, terminate)',
+    schema: aws.EC2InstanceSchema,
+    handler: aws.ec2InstanceOperations,
+  },
+  aws_s3: {
+    description: 'Manage AWS S3 buckets and objects',
+    schema: aws.S3Schema,
+    handler: aws.s3Operations,
+  },
+  aws_vpc: {
+    description: 'Manage AWS VPC networks',
+    schema: aws.VPCSchema,
+    handler: aws.vpcOperations,
+  },
+  aws_cloudformation: {
+    description: 'Manage AWS CloudFormation stacks',
+    schema: aws.CloudFormationSchema,
+    handler: aws.cloudFormationOperations,
+  },
+  aws_iam: {
+    description: 'Manage AWS IAM roles and policies',
+    schema: aws.IAMSchema,
+    handler: aws.iamOperations,
+  },
+  aws_rds: {
+    description: 'Manage AWS RDS database instances',
+    schema: aws.RDSSchema,
+    handler: aws.rdsOperations,
+  },
+  aws_route53: {
+    description: 'Manage AWS Route53 DNS records and zones',
+    schema: aws.Route53Schema,
+    handler: aws.route53Operations,
+  },
+  aws_elb: {
+    description: 'Manage AWS Elastic Load Balancers',
+    schema: aws.ELBSchema,
+    handler: aws.elbOperations,
+  },
+  aws_lambda: {
+    description: 'Manage AWS Lambda functions',
+    schema: aws.LambdaSchema,
+    handler: aws.lambdaOperations,
+  },
+  aws_dynamic_inventory: {
+    description: 'Create AWS dynamic inventory',
+    schema: aws.DynamicInventorySchema,
+    handler: aws.dynamicInventoryOperations,
+  },
+};
+
+
 class AnsibleMcpServer {
   private server: Server;
-  private defaultInventoryPath: string = '/etc/ansible/hosts';
+  // Use environment variable or fallback to default path
+  private defaultInventoryPath: string = process.env.ANSIBLE_DEFAULT_INVENTORY || '/etc/ansible/hosts';
 
   constructor() {
+    console.error(`Using default inventory path: ${this.defaultInventoryPath}`); // Log the path being used
     this.server = new Server(
       {
         name: 'ansible-mcp-server',
@@ -130,246 +233,42 @@ class AnsibleMcpServer {
   }
 
   private setupToolHandlers() {
+    // List tools dynamically from the definitions map
     this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
-      tools: [
-        {
-          name: 'run_playbook',
-          description: 'Run an Ansible playbook',
-          inputSchema: zodToJsonSchema(RunPlaybookSchema),
-        },
-        {
-          name: 'list_inventory',
-          description: 'List Ansible inventory hosts and groups',
-          inputSchema: zodToJsonSchema(ListInventorySchema),
-        },
-        {
-          name: 'check_syntax',
-          description: 'Check syntax of an Ansible playbook without executing it',
-          inputSchema: zodToJsonSchema(CheckSyntaxSchema),
-        },
-        {
-          name: 'list_tasks',
-          description: 'List all tasks that would be executed by a playbook',
-          inputSchema: zodToJsonSchema(ListTasksSchema),
-        },
-        {
-          name: 'run_ad_hoc',
-          description: 'Run an Ansible ad-hoc command against specified hosts',
-          inputSchema: zodToJsonSchema(RunAdHocSchema),
-        },
-        {
-          name: 'vault_encrypt_string',
-          description: 'Encrypt a string using Ansible Vault',
-          inputSchema: zodToJsonSchema(VaultEncryptStringSchema),
-        },
-        {
-          name: 'vault_decrypt_string',
-          description: 'Decrypt a string encrypted with Ansible Vault',
-          inputSchema: zodToJsonSchema(VaultDecryptStringSchema),
-        },
-        // AWS Tools
-        {
-          name: 'aws_ec2',
-          description: 'Manage AWS EC2 instances (list, create, start, stop, terminate)',
-          inputSchema: zodToJsonSchema(aws.EC2InstanceSchema),
-        },
-        {
-          name: 'aws_s3',
-          description: 'Manage AWS S3 buckets and objects',
-          inputSchema: zodToJsonSchema(aws.S3Schema),
-        },
-        {
-          name: 'aws_vpc',
-          description: 'Manage AWS VPC networks',
-          inputSchema: zodToJsonSchema(aws.VPCSchema),
-        },
-        {
-          name: 'aws_cloudformation',
-          description: 'Manage AWS CloudFormation stacks',
-          inputSchema: zodToJsonSchema(aws.CloudFormationSchema),
-        },
-        {
-          name: 'aws_iam',
-          description: 'Manage AWS IAM roles and policies',
-          inputSchema: zodToJsonSchema(aws.IAMSchema),
-        },
-        {
-          name: 'aws_rds',
-          description: 'Manage AWS RDS database instances',
-          inputSchema: zodToJsonSchema(aws.RDSSchema),
-        },
-        {
-          name: 'aws_route53',
-          description: 'Manage AWS Route53 DNS records and zones',
-          inputSchema: zodToJsonSchema(aws.Route53Schema),
-        },
-        {
-          name: 'aws_elb',
-          description: 'Manage AWS Elastic Load Balancers',
-          inputSchema: zodToJsonSchema(aws.ELBSchema),
-        },
-        {
-          name: 'aws_lambda',
-          description: 'Manage AWS Lambda functions',
-          inputSchema: zodToJsonSchema(aws.LambdaSchema),
-        },
-        {
-          name: 'aws_dynamic_inventory',
-          description: 'Create AWS dynamic inventory',
-          inputSchema: zodToJsonSchema(aws.DynamicInventorySchema),
-        },
-      ],
+      tools: Object.entries(toolDefinitions).map(([name, def]) => ({
+        name: name,
+        description: def.description,
+        inputSchema: zodToJsonSchema(def.schema),
+      })),
     }));
 
+    // Handle tool calls using the definitions map
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       try {
         // First verify Ansible is installed
         await verifyAnsibleInstalled();
 
-        switch (request.params.name) {
-          case 'run_playbook': {
-            const args = RunPlaybookSchema.parse(request.params.arguments);
-            const result = await playbooks.runPlaybook(args);
-            return {
-              content: [{ type: 'text', text: result }],
-            };
-          }
+        const toolName = request.params.name;
+        const toolDef = toolDefinitions[toolName];
 
-          case 'list_inventory': {
-            const args = ListInventorySchema.parse(request.params.arguments);
-            const result = await inventory.listInventory(args);
-            return {
-              content: [{ type: 'text', text: result }],
-            };
-          }
-
-          case 'check_syntax': {
-            const args = CheckSyntaxSchema.parse(request.params.arguments);
-            const result = await playbooks.checkSyntax(args);
-            return {
-              content: [{ type: 'text', text: result }],
-            };
-          }
-
-          case 'list_tasks': {
-            const args = ListTasksSchema.parse(request.params.arguments);
-            const result = await playbooks.listTasks(args);
-            return {
-              content: [{ type: 'text', text: result }],
-            };
-          }
-          
-          case 'run_ad_hoc': {
-            const args = RunAdHocSchema.parse(request.params.arguments);
-            const result = await adHoc.runAdHoc(args);
-            return {
-              content: [{ type: 'text', text: result }],
-            };
-          }
-          
-          case 'vault_encrypt_string': {
-            const args = VaultEncryptStringSchema.parse(request.params.arguments);
-            const result = await vault.encryptString(args);
-            return {
-              content: [{ type: 'text', text: result }],
-            };
-          }
-          
-          case 'vault_decrypt_string': {
-            const args = VaultDecryptStringSchema.parse(request.params.arguments);
-            const result = await vault.decryptString(args);
-            return {
-              content: [{ type: 'text', text: result }],
-            };
-          }
-          
-          // AWS Operations
-          case 'aws_ec2': {
-            const args = aws.EC2InstanceSchema.parse(request.params.arguments);
-            const result = await aws.ec2InstanceOperations(args);
-            return {
-              content: [{ type: 'text', text: result }],
-            };
-          }
-          
-          case 'aws_s3': {
-            const args = aws.S3Schema.parse(request.params.arguments);
-            const result = await aws.s3Operations(args);
-            return {
-              content: [{ type: 'text', text: result }],
-            };
-          }
-          
-          case 'aws_vpc': {
-            const args = aws.VPCSchema.parse(request.params.arguments);
-            const result = await aws.vpcOperations(args);
-            return {
-              content: [{ type: 'text', text: result }],
-            };
-          }
-          
-          case 'aws_cloudformation': {
-            const args = aws.CloudFormationSchema.parse(request.params.arguments);
-            const result = await aws.cloudFormationOperations(args);
-            return {
-              content: [{ type: 'text', text: result }],
-            };
-          }
-          
-          case 'aws_iam': {
-            const args = aws.IAMSchema.parse(request.params.arguments);
-            const result = await aws.iamOperations(args);
-            return {
-              content: [{ type: 'text', text: result }],
-            };
-          }
-          
-          case 'aws_rds': {
-            const args = aws.RDSSchema.parse(request.params.arguments);
-            const result = await aws.rdsOperations(args);
-            return {
-              content: [{ type: 'text', text: result }],
-            };
-          }
-          
-          case 'aws_route53': {
-            const args = aws.Route53Schema.parse(request.params.arguments);
-            const result = await aws.route53Operations(args);
-            return {
-              content: [{ type: 'text', text: result }],
-            };
-          }
-          
-          case 'aws_elb': {
-            const args = aws.ELBSchema.parse(request.params.arguments);
-            const result = await aws.elbOperations(args);
-            return {
-              content: [{ type: 'text', text: result }],
-            };
-          }
-          
-          case 'aws_lambda': {
-            const args = aws.LambdaSchema.parse(request.params.arguments);
-            const result = await aws.lambdaOperations(args);
-            return {
-              content: [{ type: 'text', text: result }],
-            };
-          }
-          
-          case 'aws_dynamic_inventory': {
-            const args = aws.DynamicInventorySchema.parse(request.params.arguments);
-            const result = await aws.dynamicInventoryOperations(args);
-            return {
-              content: [{ type: 'text', text: result }],
-            };
-          }
-
-          default:
-            throw new McpError(
-              ErrorCode.MethodNotFound,
-              `Unknown tool: ${request.params.name}`
-            );
+        // Check if the tool exists in our map
+        if (!toolDef) {
+          throw new McpError(
+            ErrorCode.MethodNotFound,
+            `Unknown tool: ${toolName}`
+          );
         }
+
+        // Validate arguments against the tool's schema
+        const args = toolDef.schema.parse(request.params.arguments);
+        
+        // Execute the tool's handler function
+        const result = await toolDef.handler(args);
+        
+        // Return the result
+        return {
+          content: [{ type: 'text', text: result }],
+        };
       } catch (error) {
         // Handle Zod validation errors
         if (error instanceof z.ZodError) {

@@ -124,7 +124,8 @@ export const RDSSchema = z.object({
   dbSubnetGroupName: z.string().optional(),
   tags: z.record(z.string()).optional(),
   multiAZ: z.boolean().optional(),
-  backupRetentionPeriod: z.number().optional()
+  backupRetentionPeriod: z.number().optional(),
+  skipFinalSnapshot: z.boolean().optional() // Added based on usage in aws.ts
 });
 
 export type RDSOptions = z.infer<typeof RDSSchema>;
@@ -139,7 +140,8 @@ export const Route53Schema = z.object({
   recordType: z.string().optional(),
   recordTtl: z.number().optional(),
   recordValue: z.union([z.string(), z.array(z.string())]).optional(),
-  recordState: z.string().optional()
+  recordState: z.string().optional(),
+  comment: z.string().optional() // Added based on usage in aws.ts
 });
 
 export type Route53Options = z.infer<typeof Route53Schema>;
@@ -153,9 +155,10 @@ export const ELBSchema = z.object({
   scheme: z.string().optional(),
   subnets: z.array(z.string()).optional(),
   securityGroups: z.array(z.string()).optional(),
-  listeners: z.array(z.any()).optional(),
-  healthCheck: z.any().optional(),
-  tags: z.record(z.string()).optional()
+  listeners: z.array(z.any()).optional(), // Consider defining a more specific listener schema
+  healthCheck: z.any().optional(), // Consider defining a more specific health check schema
+  tags: z.record(z.string()).optional(),
+  targetGroups: z.array(z.any()).optional() // Added based on usage in aws.ts. Consider a specific schema.
 });
 
 export type ELBOptions = z.infer<typeof ELBSchema>;
@@ -176,7 +179,8 @@ export const LambdaSchema = z.object({
   timeout: z.number().optional(),
   memorySize: z.number().optional(),
   environment: z.record(z.string()).optional(),
-  tags: z.record(z.string()).optional()
+  tags: z.record(z.string()).optional(),
+  payload: z.any().optional() // Added based on usage in aws.ts. Payload structure varies.
 });
 
 export type LambdaOptions = z.infer<typeof LambdaSchema>;
@@ -185,8 +189,16 @@ export type LambdaOptions = z.infer<typeof LambdaSchema>;
 export const DynamicInventorySchema = z.object({
   region: z.string().min(1, 'AWS region is required'),
   filters: z.record(z.any()).optional(),
-  hostnames: z.enum(['ip-address', 'public-dns-name', 'private-dns-name', 'tag:Name']).optional(),
-  keyed_groups: z.array(z.string()).optional()
+  // Changed hostnames to allow array of strings based on aws.ts usage
+  hostnames: z.array(z.string()).optional(), 
+  // Changed keyed_groups to match structure used in aws.ts
+  keyed_groups: z.array(z.object({
+    prefix: z.string(),
+    key: z.string(),
+    separator: z.string().optional()
+  })).optional(),
+  // Added compose based on usage in aws.ts
+  compose: z.record(z.string()).optional() 
 });
 
 export type DynamicInventoryOptions = z.infer<typeof DynamicInventorySchema>;
