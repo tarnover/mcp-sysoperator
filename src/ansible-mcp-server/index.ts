@@ -37,6 +37,7 @@ import * as playbooks from './operations/playbooks.js';
 import * as inventory from './operations/inventory.js';
 import * as adHoc from './operations/ad_hoc.js';
 import * as vault from './operations/vault.js';
+import * as aws from './operations/aws.js';
 
 class AnsibleMcpServer {
   private server: Server;
@@ -166,6 +167,57 @@ class AnsibleMcpServer {
           description: 'Decrypt a string encrypted with Ansible Vault',
           inputSchema: zodToJsonSchema(VaultDecryptStringSchema),
         },
+        // AWS Tools
+        {
+          name: 'aws_ec2',
+          description: 'Manage AWS EC2 instances (list, create, start, stop, terminate)',
+          inputSchema: zodToJsonSchema(aws.EC2InstanceSchema),
+        },
+        {
+          name: 'aws_s3',
+          description: 'Manage AWS S3 buckets and objects',
+          inputSchema: zodToJsonSchema(aws.S3Schema),
+        },
+        {
+          name: 'aws_vpc',
+          description: 'Manage AWS VPC networks',
+          inputSchema: zodToJsonSchema(aws.VPCSchema),
+        },
+        {
+          name: 'aws_cloudformation',
+          description: 'Manage AWS CloudFormation stacks',
+          inputSchema: zodToJsonSchema(aws.CloudFormationSchema),
+        },
+        {
+          name: 'aws_iam',
+          description: 'Manage AWS IAM roles and policies',
+          inputSchema: zodToJsonSchema(aws.IAMSchema),
+        },
+        {
+          name: 'aws_rds',
+          description: 'Manage AWS RDS database instances',
+          inputSchema: zodToJsonSchema(aws.RDSSchema),
+        },
+        {
+          name: 'aws_route53',
+          description: 'Manage AWS Route53 DNS records and zones',
+          inputSchema: zodToJsonSchema(aws.Route53Schema),
+        },
+        {
+          name: 'aws_elb',
+          description: 'Manage AWS Elastic Load Balancers',
+          inputSchema: zodToJsonSchema(aws.ELBSchema),
+        },
+        {
+          name: 'aws_lambda',
+          description: 'Manage AWS Lambda functions',
+          inputSchema: zodToJsonSchema(aws.LambdaSchema),
+        },
+        {
+          name: 'aws_dynamic_inventory',
+          description: 'Create AWS dynamic inventory',
+          inputSchema: zodToJsonSchema(aws.DynamicInventorySchema),
+        },
       ],
     }));
 
@@ -226,6 +278,87 @@ class AnsibleMcpServer {
           case 'vault_decrypt_string': {
             const args = VaultDecryptStringSchema.parse(request.params.arguments);
             const result = await vault.decryptString(args);
+            return {
+              content: [{ type: 'text', text: result }],
+            };
+          }
+          
+          // AWS Operations
+          case 'aws_ec2': {
+            const args = aws.EC2InstanceSchema.parse(request.params.arguments);
+            const result = await aws.ec2InstanceOperations(args);
+            return {
+              content: [{ type: 'text', text: result }],
+            };
+          }
+          
+          case 'aws_s3': {
+            const args = aws.S3Schema.parse(request.params.arguments);
+            const result = await aws.s3Operations(args);
+            return {
+              content: [{ type: 'text', text: result }],
+            };
+          }
+          
+          case 'aws_vpc': {
+            const args = aws.VPCSchema.parse(request.params.arguments);
+            const result = await aws.vpcOperations(args);
+            return {
+              content: [{ type: 'text', text: result }],
+            };
+          }
+          
+          case 'aws_cloudformation': {
+            const args = aws.CloudFormationSchema.parse(request.params.arguments);
+            const result = await aws.cloudFormationOperations(args);
+            return {
+              content: [{ type: 'text', text: result }],
+            };
+          }
+          
+          case 'aws_iam': {
+            const args = aws.IAMSchema.parse(request.params.arguments);
+            const result = await aws.iamOperations(args);
+            return {
+              content: [{ type: 'text', text: result }],
+            };
+          }
+          
+          case 'aws_rds': {
+            const args = aws.RDSSchema.parse(request.params.arguments);
+            const result = await aws.rdsOperations(args);
+            return {
+              content: [{ type: 'text', text: result }],
+            };
+          }
+          
+          case 'aws_route53': {
+            const args = aws.Route53Schema.parse(request.params.arguments);
+            const result = await aws.route53Operations(args);
+            return {
+              content: [{ type: 'text', text: result }],
+            };
+          }
+          
+          case 'aws_elb': {
+            const args = aws.ELBSchema.parse(request.params.arguments);
+            const result = await aws.elbOperations(args);
+            return {
+              content: [{ type: 'text', text: result }],
+            };
+          }
+          
+          case 'aws_lambda': {
+            const args = aws.LambdaSchema.parse(request.params.arguments);
+            const result = await aws.lambdaOperations(args);
+            return {
+              content: [{ type: 'text', text: result }],
+            };
+          }
+          
+          case 'aws_dynamic_inventory': {
+            const args = aws.DynamicInventorySchema.parse(request.params.arguments);
+            const result = await aws.dynamicInventoryOperations(args);
             return {
               content: [{ type: 'text', text: result }],
             };

@@ -2,7 +2,13 @@ import { existsSync } from 'fs';
 import { resolve } from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { AnsiblePlaybookNotFoundError, AnsibleInventoryNotFoundError, AnsibleNotInstalledError } from './errors.js';
+import { 
+  AnsiblePlaybookNotFoundError, 
+  AnsibleInventoryNotFoundError, 
+  AnsibleNotInstalledError,
+  AwsCliNotInstalledError,
+  AwsCredentialsError
+} from './errors.js';
 
 export const execAsync = promisify(exec);
 
@@ -59,5 +65,57 @@ export async function verifyAnsibleInstalled(): Promise<void> {
   const isInstalled = await checkAnsibleInstalled();
   if (!isInstalled) {
     throw new AnsibleNotInstalledError();
+  }
+}
+
+/**
+ * Checks if AWS CLI is installed on the system
+ * @returns Promise that resolves to true if AWS CLI is installed, false otherwise
+ */
+export async function checkAwsCliInstalled(): Promise<boolean> {
+  try {
+    await execAsync('aws --version');
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
+ * Verifies that AWS CLI is installed and throws an error if it's not
+ * @throws AwsCliNotInstalledError if AWS CLI is not installed
+ */
+export async function verifyAwsCliInstalled(): Promise<void> {
+  const isInstalled = await checkAwsCliInstalled();
+  if (!isInstalled) {
+    throw new AwsCliNotInstalledError();
+  }
+}
+
+/**
+ * Checks if AWS credentials are configured properly
+ * @returns Promise that resolves to true if AWS credentials are configured, false otherwise
+ */
+export async function checkAwsCredentials(): Promise<boolean> {
+  try {
+    await execAsync('aws sts get-caller-identity');
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
+ * Verifies that AWS credentials are configured properly and throws an error if they're not
+ * @throws AwsCredentialsError if AWS credentials are not configured
+ */
+export async function verifyAwsCredentials(): Promise<void> {
+  // First verify AWS CLI is installed
+  await verifyAwsCliInstalled();
+  
+  // Then check credentials
+  const isConfigured = await checkAwsCredentials();
+  if (!isConfigured) {
+    throw new AwsCredentialsError();
   }
 }

@@ -1,5 +1,196 @@
 import { z } from 'zod';
 
+// AWS Actions
+export const EC2InstanceActionEnum = z.enum(['list', 'create', 'terminate', 'start', 'stop']);
+export type EC2InstanceAction = z.infer<typeof EC2InstanceActionEnum>;
+
+export const S3ActionEnum = z.enum(['list_buckets', 'create_bucket', 'delete_bucket', 'list_objects', 'upload', 'download']);
+export type S3Action = z.infer<typeof S3ActionEnum>;
+
+export const VPCActionEnum = z.enum(['list', 'create', 'delete']);
+export type VPCAction = z.infer<typeof VPCActionEnum>;
+
+export const CloudFormationActionEnum = z.enum(['list', 'create', 'update', 'delete']);
+export type CloudFormationAction = z.infer<typeof CloudFormationActionEnum>;
+
+export const IAMActionEnum = z.enum(['list_roles', 'list_policies', 'create_role', 'create_policy', 'delete_role', 'delete_policy']);
+export type IAMAction = z.infer<typeof IAMActionEnum>;
+
+export const RDSActionEnum = z.enum(['list', 'create', 'delete', 'start', 'stop']);
+export type RDSAction = z.infer<typeof RDSActionEnum>;
+
+export const Route53ActionEnum = z.enum(['list_zones', 'list_records', 'create_zone', 'create_record', 'delete_record', 'delete_zone']);
+export type Route53Action = z.infer<typeof Route53ActionEnum>;
+
+export const ELBActionEnum = z.enum(['list', 'create', 'delete']);
+export type ELBAction = z.infer<typeof ELBActionEnum>;
+
+export const LambdaActionEnum = z.enum(['list', 'create', 'update', 'delete', 'invoke']);
+export type LambdaAction = z.infer<typeof LambdaActionEnum>;
+
+// AWS EC2 Schema
+export const EC2InstanceSchema = z.object({
+  action: EC2InstanceActionEnum,
+  region: z.string().min(1, 'AWS region is required'),
+  instanceIds: z.array(z.string()).optional(),
+  filters: z.record(z.any()).optional(),
+  instanceType: z.string().optional(),
+  imageId: z.string().optional(),
+  keyName: z.string().optional(),
+  securityGroups: z.array(z.string()).optional(),
+  userData: z.string().optional(),
+  count: z.number().optional(),
+  tags: z.record(z.string()).optional(),
+  waitForCompletion: z.boolean().optional().default(true),
+  terminationProtection: z.boolean().optional()
+});
+
+export type EC2InstanceOptions = z.infer<typeof EC2InstanceSchema>;
+
+// AWS S3 Schema
+export const S3Schema = z.object({
+  action: S3ActionEnum,
+  region: z.string().min(1, 'AWS region is required'),
+  bucket: z.string().optional(),
+  objectKey: z.string().optional(),
+  localPath: z.string().optional(),
+  acl: z.string().optional(),
+  tags: z.record(z.string()).optional(),
+  metadata: z.record(z.string()).optional(),
+  contentType: z.string().optional()
+});
+
+export type S3Options = z.infer<typeof S3Schema>;
+
+// AWS VPC Schema
+export const VPCSchema = z.object({
+  action: VPCActionEnum,
+  region: z.string().min(1, 'AWS region is required'),
+  vpcId: z.string().optional(),
+  cidrBlock: z.string().optional(),
+  name: z.string().optional(),
+  dnsSupport: z.boolean().optional(),
+  dnsHostnames: z.boolean().optional(),
+  tags: z.record(z.string()).optional(),
+  subnets: z.array(z.object({
+    cidr: z.string(),
+    az: z.string().optional(),
+    tags: z.record(z.string()).optional()
+  })).optional()
+});
+
+export type VPCOptions = z.infer<typeof VPCSchema>;
+
+// AWS CloudFormation Schema
+export const CloudFormationSchema = z.object({
+  action: CloudFormationActionEnum,
+  region: z.string().min(1, 'AWS region is required'),
+  stackName: z.string().optional(),
+  templateBody: z.string().optional(),
+  templateUrl: z.string().optional(),
+  parameters: z.record(z.any()).optional(),
+  capabilities: z.array(z.string()).optional(),
+  tags: z.record(z.string()).optional()
+});
+
+export type CloudFormationOptions = z.infer<typeof CloudFormationSchema>;
+
+// AWS IAM Schema
+export const IAMSchema = z.object({
+  action: IAMActionEnum,
+  region: z.string().min(1, 'AWS region is required'),
+  name: z.string().optional(),
+  roleName: z.string().optional(),
+  policyName: z.string().optional(),
+  policyDocument: z.any().optional(),
+  assumeRolePolicyDocument: z.any().optional(),
+  path: z.string().optional(),
+  managedPolicies: z.array(z.string()).optional()
+});
+
+export type IAMOptions = z.infer<typeof IAMSchema>;
+
+// AWS RDS Schema
+export const RDSSchema = z.object({
+  action: RDSActionEnum,
+  region: z.string().min(1, 'AWS region is required'),
+  dbInstanceIdentifier: z.string().optional(),
+  dbEngine: z.string().optional(),
+  dbInstanceClass: z.string().optional(),
+  allocatedStorage: z.number().optional(),
+  masterUsername: z.string().optional(),
+  masterPassword: z.string().optional(),
+  vpcSecurityGroupIds: z.array(z.string()).optional(),
+  dbSubnetGroupName: z.string().optional(),
+  tags: z.record(z.string()).optional(),
+  multiAZ: z.boolean().optional(),
+  backupRetentionPeriod: z.number().optional()
+});
+
+export type RDSOptions = z.infer<typeof RDSSchema>;
+
+// AWS Route53 Schema
+export const Route53Schema = z.object({
+  action: Route53ActionEnum,
+  region: z.string().min(1, 'AWS region is required'),
+  zoneId: z.string().optional(),
+  zoneName: z.string().optional(),
+  recordName: z.string().optional(),
+  recordType: z.string().optional(),
+  recordTtl: z.number().optional(),
+  recordValue: z.union([z.string(), z.array(z.string())]).optional(),
+  recordState: z.string().optional()
+});
+
+export type Route53Options = z.infer<typeof Route53Schema>;
+
+// AWS ELB Schema
+export const ELBSchema = z.object({
+  action: ELBActionEnum,
+  region: z.string().min(1, 'AWS region is required'),
+  name: z.string().optional(),
+  lbType: z.enum(['classic', 'application', 'network']).optional().default('application'),
+  scheme: z.string().optional(),
+  subnets: z.array(z.string()).optional(),
+  securityGroups: z.array(z.string()).optional(),
+  listeners: z.array(z.any()).optional(),
+  healthCheck: z.any().optional(),
+  tags: z.record(z.string()).optional()
+});
+
+export type ELBOptions = z.infer<typeof ELBSchema>;
+
+// AWS Lambda Schema
+export const LambdaSchema = z.object({
+  action: LambdaActionEnum,
+  region: z.string().min(1, 'AWS region is required'),
+  name: z.string().optional(),
+  zipFile: z.string().optional(),
+  s3Bucket: z.string().optional(),
+  s3Key: z.string().optional(),
+  functionCode: z.string().optional(),
+  runtime: z.string().optional(),
+  handler: z.string().optional(),
+  role: z.string().optional(),
+  description: z.string().optional(),
+  timeout: z.number().optional(),
+  memorySize: z.number().optional(),
+  environment: z.record(z.string()).optional(),
+  tags: z.record(z.string()).optional()
+});
+
+export type LambdaOptions = z.infer<typeof LambdaSchema>;
+
+// AWS Dynamic Inventory Schema
+export const DynamicInventorySchema = z.object({
+  region: z.string().min(1, 'AWS region is required'),
+  filters: z.record(z.any()).optional(),
+  hostnames: z.enum(['ip-address', 'public-dns-name', 'private-dns-name', 'tag:Name']).optional(),
+  keyed_groups: z.array(z.string()).optional()
+});
+
+export type DynamicInventoryOptions = z.infer<typeof DynamicInventorySchema>;
+
 // Schema for running ad-hoc commands
 export const RunAdHocSchema = z.object({
   pattern: z.string().min(1, 'Host pattern is required'),

@@ -38,6 +38,27 @@ export class AnsibleNotInstalledError extends AnsibleError {
   }
 }
 
+export class AwsCredentialsError extends AnsibleError {
+  constructor(message = 'AWS credentials are not configured or are invalid') {
+    super(message);
+    this.name = 'AwsCredentialsError';
+  }
+}
+
+export class AwsCliNotInstalledError extends AnsibleError {
+  constructor() {
+    super('AWS CLI is not installed or not found in PATH. Please install AWS CLI first.');
+    this.name = 'AwsCliNotInstalledError';
+  }
+}
+
+export class AwsModuleNotFoundError extends AnsibleError {
+  constructor(moduleName: string) {
+    super(`AWS module not found: ${moduleName}. Make sure amazon.aws collection is installed.`);
+    this.name = 'AwsModuleNotFoundError';
+  }
+}
+
 export function isAnsibleError(error: unknown): error is AnsibleError {
   return error instanceof AnsibleError;
 }
