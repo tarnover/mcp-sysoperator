@@ -2,6 +2,10 @@
 
 A Model Context Protocol (MCP) server for Ansible automation. This server allows AI assistants to interact with Ansible, execute playbooks, manage inventory, and perform other Ansible operations directly.
 
+<a href="https://glama.ai/mcp/servers/@tarnover/mcp-ansible">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@tarnover/mcp-ansible/badge" alt="Ansible Server MCP server" />
+</a>
+
 ## Features
 
 - **Run Ansible Playbooks**: Execute Ansible playbooks with support for parameters like inventory, extra vars, tags, and limits
