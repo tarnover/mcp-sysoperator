@@ -25,13 +25,18 @@ import {
   RunPlaybookSchema, 
   ListInventorySchema, 
   CheckSyntaxSchema, 
-  ListTasksSchema 
+  ListTasksSchema,
+  RunAdHocSchema,
+  VaultEncryptStringSchema,
+  VaultDecryptStringSchema
 } from './common/types.js';
 import { verifyAnsibleInstalled } from './common/utils.js';
 
 // Import operations
 import * as playbooks from './operations/playbooks.js';
 import * as inventory from './operations/inventory.js';
+import * as adHoc from './operations/ad_hoc.js';
+import * as vault from './operations/vault.js';
 
 class AnsibleMcpServer {
   private server: Server;
@@ -146,6 +151,21 @@ class AnsibleMcpServer {
           description: 'List all tasks that would be executed by a playbook',
           inputSchema: zodToJsonSchema(ListTasksSchema),
         },
+        {
+          name: 'run_ad_hoc',
+          description: 'Run an Ansible ad-hoc command against specified hosts',
+          inputSchema: zodToJsonSchema(RunAdHocSchema),
+        },
+        {
+          name: 'vault_encrypt_string',
+          description: 'Encrypt a string using Ansible Vault',
+          inputSchema: zodToJsonSchema(VaultEncryptStringSchema),
+        },
+        {
+          name: 'vault_decrypt_string',
+          description: 'Decrypt a string encrypted with Ansible Vault',
+          inputSchema: zodToJsonSchema(VaultDecryptStringSchema),
+        },
       ],
     }));
 
@@ -182,6 +202,30 @@ class AnsibleMcpServer {
           case 'list_tasks': {
             const args = ListTasksSchema.parse(request.params.arguments);
             const result = await playbooks.listTasks(args);
+            return {
+              content: [{ type: 'text', text: result }],
+            };
+          }
+          
+          case 'run_ad_hoc': {
+            const args = RunAdHocSchema.parse(request.params.arguments);
+            const result = await adHoc.runAdHoc(args);
+            return {
+              content: [{ type: 'text', text: result }],
+            };
+          }
+          
+          case 'vault_encrypt_string': {
+            const args = VaultEncryptStringSchema.parse(request.params.arguments);
+            const result = await vault.encryptString(args);
+            return {
+              content: [{ type: 'text', text: result }],
+            };
+          }
+          
+          case 'vault_decrypt_string': {
+            const args = VaultDecryptStringSchema.parse(request.params.arguments);
+            const result = await vault.decryptString(args);
             return {
               content: [{ type: 'text', text: result }],
             };
