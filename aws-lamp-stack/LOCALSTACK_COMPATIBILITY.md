@@ -16,9 +16,11 @@ We've added error handling to several playbooks to ensure they can run successfu
 
 ### 1. EFS Playbook (`efs.yml`)
 
+- Used direct `awslocal` CLI commands for EFS operations in LocalStack mode instead of MCP tools
+- Added separate tasks for AWS and LocalStack environments
 - Replaced the "Wait for EFS mount targets to be available" task with a simulation task for LocalStack
 - Replaced the "Create EFS access point for web servers" task with a simulation task for LocalStack
-- This approach avoids the long wait times and potential failures when LocalStack doesn't properly implement the state transitions for EFS resources
+- This approach avoids the long wait times and potential failures when LocalStack doesn't properly implement the state transitions for EFS resources, while using the native LocalStack CLI commands that are known to work correctly
 
 ### 2. RDS Playbook (`rds.yml`)
 

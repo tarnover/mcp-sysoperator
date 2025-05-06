@@ -22,7 +22,7 @@
       include_vars:
         file: "{{ playbook_dir }}/../.security_ids.yml"
       
-    - name: Create EFS file system
+    - name: Create EFS file system (AWS)
       use_mcp_tool:
         server_name: ansible
         tool_name: aws_efs
@@ -34,12 +34,29 @@
           encrypted: true
           tags: "{{ aws_tags | combine({'Name': project_name + '-efs'}) }}"
       register: efs_result
+      when: environment != 'localstack'
+      
+    - name: Create EFS file system (LocalStack)
+      shell: >
+        {{ aws_cli_command }} efs create-file-system 
+        --performance-mode {{ efs_performance_mode }} 
+        --throughput-mode {{ efs_throughput_mode }} 
+        --tags Key=Name,Value={{ project_name }}-efs
+      register: efs_result_localstack
+      when: environment == 'localstack'
+      
+    - name: Set EFS result for LocalStack
+      set_fact:
+        efs_result:
+          result:
+            fileSystemId: "{{ efs_result_localstack.stdout | from_json | json_query('FileSystemId') | default('fs-dummy') }}"
+      when: environment == 'localstack'
       
     - name: Set EFS ID fact
       set_fact:
         efs_id: "{{ efs_result.result.fileSystemId | default('fs-dummy') }}"
         
-    - name: Create EFS mount target in AZ1
+    - name: Create EFS mount target in AZ1 (AWS)
       use_mcp_tool:
         server_name: ansible
         tool_name: aws_efs
@@ -51,8 +68,9 @@
           securityGroups:
             - "{{ efs_sg_id }}"
       register: efs_mount_target_1_result
+      when: environment != 'localstack'
       
-    - name: Create EFS mount target in AZ2
+    - name: Create EFS mount target in AZ2 (AWS)
       use_mcp_tool:
         server_name: ansible
         tool_name: aws_efs
@@ -64,6 +82,25 @@
           securityGroups:
             - "{{ efs_sg_id }}"
       register: efs_mount_target_2_result
+      when: environment != 'localstack'
+      
+    - name: Create EFS mount target in AZ1 (LocalStack)
+      shell: >
+        {{ aws_cli_command }} efs create-mount-target 
+        --file-system-id {{ efs_id }} 
+        --subnet-id {{ private_subnet_1_id }} 
+        --security-groups {{ efs_sg_id }}
+      register: efs_mount_target_1_result_localstack
+      when: environment == 'localstack'
+      
+    - name: Create EFS mount target in AZ2 (LocalStack)
+      shell: >
+        {{ aws_cli_command }} efs create-mount-target 
+        --file-system-id {{ efs_id }} 
+        --subnet-id {{ private_subnet_2_id }} 
+        --security-groups {{ efs_sg_id }}
+      register: efs_mount_target_2_result_localstack
+      when: environment == 'localstack'
       
     - name: Wait for EFS mount targets to be available (AWS only)
       block:
