@@ -4,6 +4,8 @@ This project provides a complete set of Ansible playbooks and roles to deploy a 
 
 ## Architecture
 
+> This section was generated using Cline and mcp-ansible.
+
 The deployed architecture includes:
 
 - VPC with public and private subnets across multiple availability zones
@@ -15,7 +17,72 @@ The deployed architecture includes:
 - Route 53 for DNS management
 - ACM for SSL/TLS certificates
 
-![Architecture Diagram](docs/architecture.png)
+```mermaid
+graph TD
+    subgraph "AWS Cloud"
+        subgraph "VPC"
+            subgraph "Public Subnet AZ1"
+                ALB1["Application Load Balancer"]
+                NAT1["NAT Gateway"]
+            end
+            
+            subgraph "Public Subnet AZ2"
+                ALB2["Application Load Balancer"]
+                NAT2["NAT Gateway"]
+            end
+            
+            subgraph "Private Subnet AZ1"
+                ASG1["Auto Scaling Group - Web Servers"]
+                EFS1["EFS Mount Target"]
+            end
+            
+            subgraph "Private Subnet AZ2"
+                ASG2["Auto Scaling Group - Web Servers"]
+                EFS2["EFS Mount Target"]
+            end
+            
+            subgraph "Private Subnet AZ1 - DB"
+                RDS1["Aurora MySQL Primary"]
+            end
+            
+            subgraph "Private Subnet AZ2 - DB"
+                RDS2["Aurora MySQL Replica"]
+            end
+            
+            EFSMain["Elastic File System"]
+        end
+        
+        Route53["Route 53"]
+        ACM["ACM Certificate"]
+        IGW["Internet Gateway"]
+    end
+    
+    User["User"] -->|HTTPS| Route53
+    Route53 -->|DNS Resolution| ALB1
+    Route53 -->|DNS Resolution| ALB2
+    ACM -->|SSL Certificate| ALB1
+    ACM -->|SSL Certificate| ALB2
+    
+    IGW <-->|Internet Traffic| ALB1
+    IGW <-->|Internet Traffic| ALB2
+    
+    ALB1 -->|HTTP/HTTPS| ASG1
+    ALB1 -->|HTTP/HTTPS| ASG2
+    ALB2 -->|HTTP/HTTPS| ASG1
+    ALB2 -->|HTTP/HTTPS| ASG2
+    
+    ASG1 -->|SQL Queries| RDS1
+    ASG2 -->|SQL Queries| RDS1
+    RDS1 -->|Replication| RDS2
+    
+    ASG1 -->|File Access| EFS1
+    ASG2 -->|File Access| EFS2
+    EFS1 --- EFSMain
+    EFS2 --- EFSMain
+    
+    NAT1 -->|Outbound Traffic| ASG1
+    NAT2 -->|Outbound Traffic| ASG2
+```
 
 ## Prerequisites
 
@@ -132,6 +199,14 @@ The project includes integration with LocalStack for local testing without incur
 1. Install and start LocalStack
 2. Set `ENVIRONMENT=localstack`
 3. Run the playbooks as usual
+
+For convenience, you can use the provided test script:
+
+```bash
+./test_with_localstack.sh
+```
+
+See the [LOCALSTACK_COMPATIBILITY.md](LOCALSTACK_COMPATIBILITY.md) file for details on LocalStack compatibility improvements.
 
 ## Security Considerations
 

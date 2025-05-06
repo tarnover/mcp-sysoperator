@@ -65,19 +65,21 @@
             - "{{ efs_sg_id }}"
       register: efs_mount_target_2_result
       
-    - name: Wait for EFS mount targets to be available
-      use_mcp_tool:
-        server_name: ansible
-        tool_name: aws_efs
-        arguments:
-          action: describe_mount_targets
-          region: "{{ aws_region }}"
-          fileSystemId: "{{ efs_id }}"
-      register: efs_mount_targets
-      until: (efs_mount_targets.result.mountTargets | default([]) | length >= 2) and 
-             (efs_mount_targets.result.mountTargets | default([]) | map(attribute='lifeCycleState') | list | unique | first == 'available')
-      retries: 30
-      delay: 10
+    - name: Wait for EFS mount targets to be available (AWS only)
+      block:
+        - name: Wait for EFS mount targets to be available
+          use_mcp_tool:
+            server_name: ansible
+            tool_name: aws_efs
+            arguments:
+              action: describe_mount_targets
+              region: "{{ aws_region }}"
+              fileSystemId: "{{ efs_id }}"
+          register: efs_mount_targets
+          until: (efs_mount_targets.result.mountTargets | default([]) | length >= 2) and 
+                 (efs_mount_targets.result.mountTargets | default([]) | map(attribute='lifeCycleState') | list | unique | first == 'available')
+          retries: 30
+          delay: 10
       when: environment != 'localstack'
       
     - name: Simulate EFS mount targets available for LocalStack
@@ -103,25 +105,27 @@
         dest: "{{ playbook_dir }}/../.efs_ids.yml"
         mode: '0644'
         
-    - name: Create EFS access point for web servers
-      use_mcp_tool:
-        server_name: ansible
-        tool_name: aws_efs
-        arguments:
-          action: create_access_point
-          region: "{{ aws_region }}"
-          fileSystemId: "{{ efs_id }}"
-          posixUser:
-            uid: 48
-            gid: 48
-          rootDirectory:
-            path: "/shared"
-            creationInfo:
-              ownerUid: 48
-              ownerGid: 48
-              permissions: "0755"
-          tags: "{{ aws_tags | combine({'Name': project_name + '-efs-ap'}) }}"
-      register: efs_access_point_result
+    - name: Create EFS access point for web servers (AWS only)
+      block:
+        - name: Create EFS access point for web servers
+          use_mcp_tool:
+            server_name: ansible
+            tool_name: aws_efs
+            arguments:
+              action: create_access_point
+              region: "{{ aws_region }}"
+              fileSystemId: "{{ efs_id }}"
+              posixUser:
+                uid: 48
+                gid: 48
+              rootDirectory:
+                path: "/shared"
+                creationInfo:
+                  ownerUid: 48
+                  ownerGid: 48
+                  permissions: "0755"
+              tags: "{{ aws_tags | combine({'Name': project_name + '-efs-ap'}) }}"
+          register: efs_access_point_result
       when: environment != 'localstack'
       
     - name: Simulate EFS access point for LocalStack
