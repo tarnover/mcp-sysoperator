@@ -28,8 +28,8 @@ A Model Context Protocol (MCP) server for Infrastructure as Code operations. Thi
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/your-username/mcp-ansible.git
-cd mcp-ansible
+git clone https://github.com/tarnover/mcp-sysoperator.git
+cd mcp-sysoperator
 ```
 
 ### 2. Install dependencies
@@ -63,14 +63,14 @@ Add the following to the `mcpServers` section:
   "mcpServers": {
     "ansible": {
       "command": "node",
-      "args": ["/absolute/path/to/mcp-ansible/build/index.js"],
+      "args": ["/absolute/path/to/mcp-sysoperator/build/index.js"],
       "env": {}
     }
   }
 }
 ```
 
-Make sure to replace `/absolute/path/to/mcp-ansible` with the actual path to your installation.
+Make sure to replace `/absolute/path/to/mcp-sysoperator` with the actual path to your installation.
 
 ## Usage Examples
 
