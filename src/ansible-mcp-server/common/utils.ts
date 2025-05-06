@@ -9,7 +9,9 @@ import {
   AnsibleInventoryNotFoundError, 
   AnsibleNotInstalledError,
   AwsCliNotInstalledError,
-  AwsCredentialsError
+  AwsCredentialsError,
+  TerraformNotInstalledError,
+  TflocalNotInstalledError
 } from './errors.js';
 
 export const execAsync = promisify(exec);
@@ -164,5 +166,53 @@ export async function verifyAwsCredentials(): Promise<void> {
   const isConfigured = await checkAwsCredentials();
   if (!isConfigured) {
     throw new AwsCredentialsError();
+  }
+}
+
+/**
+ * Checks if Terraform is installed on the system
+ * @returns Promise that resolves to true if Terraform is installed, false otherwise
+ */
+export async function checkTerraformInstalled(): Promise<boolean> {
+  try {
+    await execAsync('terraform --version');
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
+ * Verifies that Terraform is installed and throws an error if it's not
+ * @throws TerraformNotInstalledError if Terraform is not installed
+ */
+export async function verifyTerraformInstalled(): Promise<void> {
+  const isInstalled = await checkTerraformInstalled();
+  if (!isInstalled) {
+    throw new TerraformNotInstalledError();
+  }
+}
+
+/**
+ * Checks if tflocal (Terraform with LocalStack) is installed on the system
+ * @returns Promise that resolves to true if tflocal is installed, false otherwise
+ */
+export async function checkTflocalInstalled(): Promise<boolean> {
+  try {
+    await execAsync('tflocal --version');
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
+ * Verifies that tflocal is installed and throws an error if it's not
+ * @throws TflocalNotInstalledError if tflocal is not installed
+ */
+export async function verifyTflocalInstalled(): Promise<void> {
+  const isInstalled = await checkTflocalInstalled();
+  if (!isInstalled) {
+    throw new TflocalNotInstalledError();
   }
 }

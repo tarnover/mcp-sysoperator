@@ -59,6 +59,20 @@ export class AwsModuleNotFoundError extends AnsibleError {
   }
 }
 
+export class TerraformNotInstalledError extends AnsibleError {
+  constructor() {
+    super('Terraform is not installed or not found in PATH. Please install Terraform first.');
+    this.name = 'TerraformNotInstalledError';
+  }
+}
+
+export class TflocalNotInstalledError extends AnsibleError {
+  constructor() {
+    super('tflocal is not installed or not found in PATH. Please install tflocal first.');
+    this.name = 'TflocalNotInstalledError';
+  }
+}
+
 export function isAnsibleError(error: unknown): error is AnsibleError {
   return error instanceof AnsibleError;
 }

@@ -1,6 +1,6 @@
-# Ansible MCP Server
+# MCP SysOperator
 
-A Model Context Protocol (MCP) server for Ansible automation. This server allows AI assistants to interact with Ansible, execute playbooks, manage inventory, and perform other Ansible operations directly.
+A Model Context Protocol (MCP) server for Infrastructure as Code operations. This server allows AI assistants to interact with Ansible and Terraform, execute playbooks and Terraform plans, manage cloud resources, and perform other infrastructure operations directly.
 
 ## Features
 
@@ -9,7 +9,9 @@ A Model Context Protocol (MCP) server for Ansible automation. This server allows
 - **Check Syntax**: Validate Ansible playbook syntax without execution
 - **List Tasks**: Preview tasks that would be executed by a playbook
 - **Access Default Inventory**: Access the default Ansible inventory file via resource API
-- **AWS Integration**: Manage AWS resources using Ansible (EC2, S3, VPC, CloudFormation, etc.)
+- **AWS Integration**: Manage AWS resources (EC2, S3, VPC, CloudFormation, etc.)
+- **Terraform Support**: Execute Terraform commands (init, plan, apply, destroy, output, etc.)
+- **tflocal Integration**: Test Terraform configurations with LocalStack for local cloud development
 - **LocalStack Support**: Test AWS operations locally using LocalStack without real AWS credentials
 
 ## Requirements
@@ -161,6 +163,77 @@ Once installed and configured, the MCP server provides the following tools to th
 </use_mcp_tool>
 ```
 
+### 7. Terraform Init and Plan
+
+```
+<use_mcp_tool>
+<server_name>ansible</server_name>
+<tool_name>terraform</tool_name>
+<arguments>
+{
+  "action": "init",
+  "workingDir": "/path/to/terraform/project"
+}
+</arguments>
+</use_mcp_tool>
+
+<use_mcp_tool>
+<server_name>ansible</server_name>
+<tool_name>terraform</tool_name>
+<arguments>
+{
+  "action": "plan",
+  "workingDir": "/path/to/terraform/project",
+  "vars": {
+    "instance_type": "t2.micro",
+    "region": "us-west-2"
+  }
+}
+</arguments>
+</use_mcp_tool>
+```
+
+### 8. Terraform Apply
+
+```
+<use_mcp_tool>
+<server_name>ansible</server_name>
+<tool_name>terraform</tool_name>
+<arguments>
+{
+  "action": "apply",
+  "workingDir": "/path/to/terraform/project",
+  "autoApprove": true,
+  "vars": {
+    "instance_type": "t2.micro",
+    "region": "us-west-2"
+  }
+}
+</arguments>
+</use_mcp_tool>
+```
+
+### 9. Terraform with LocalStack (tflocal)
+
+```
+<use_mcp_tool>
+<server_name>ansible</server_name>
+<tool_name>terraform</tool_name>
+<arguments>
+{
+  "action": "apply",
+  "workingDir": "/path/to/terraform/project",
+  "useLocalstack": true,
+  "autoApprove": true,
+  "vars": {
+    "instance_type": "t2.micro",
+    "region": "us-west-2"
+  }
+}
+</arguments>
+</use_mcp_tool>
+```
+
 ## LocalStack Integration
 
 This project includes integration with LocalStack for testing AWS operations locally without real AWS credentials. The LocalStack integration allows you to:
@@ -192,14 +265,26 @@ node localstack/run_sample_playbook.mjs
 ### Project Structure
 
 ```
-mcp-ansible/
+mcp-sysoperator/
 ├── src/
 │   ├── index.ts                  # Main entry point
-│   └── ansible-mcp-server/       
-│       └── index.ts              # Ansible MCP server implementation
+│   └── ansible-mcp-server/       # Will be renamed in filesystem in future updates
+│       ├── index.ts              # MCP SysOperator server implementation
+│       ├── common/               # Common utilities and types
+│       │   ├── errors.ts         # Error definitions
+│       │   ├── types.ts          # Type and schema definitions
+│       │   ├── utils.ts          # Utility functions
+│       │   └── version.ts        # Version information
+│       └── operations/           # Operation handlers
+│           ├── ad_hoc.ts         # Ansible ad-hoc commands
+│           ├── aws.ts            # AWS operations
+│           ├── inventory.ts      # Ansible inventory operations
+│           ├── playbooks.ts      # Ansible playbook operations
+│           ├── terraform.ts      # Terraform operations
+│           └── vault.ts          # Ansible vault operations
 ├── localstack/                   # LocalStack integration
 │   ├── README.md                 # LocalStack documentation
-│   ├── sample_playbook.yml      # Sample playbook for LocalStack
+│   ├── sample_playbook.yml       # Sample playbook for LocalStack
 │   ├── inventory.ini             # Sample inventory for LocalStack
 │   ├── run_sample_playbook.mjs   # Script to run sample playbook
 │   └── utils.localstack.ts       # Modified utils for LocalStack
@@ -210,12 +295,13 @@ mcp-ansible/
 
 ### Adding New Features
 
-To add new Ansible capabilities to the MCP server:
+To add new capabilities to the MCP server:
 
-1. Modify `src/ansible-mcp-server/index.ts`
+1. Modify `src/ansible-mcp-server/index.ts` (future: `src/sysoperator/index.ts`)
 2. Add your new tool in the `setupToolHandlers` method
-3. Implement a handler function for your tool
-4. Rebuild with `npm run build`
+3. Implement a handler function for your tool in the appropriate operations file
+4. Add the schema definition in `common/types.ts`
+5. Rebuild with `npm run build`
 
 ## License
 

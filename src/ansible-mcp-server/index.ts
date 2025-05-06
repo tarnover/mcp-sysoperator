@@ -38,6 +38,7 @@ import * as inventory from './operations/inventory.js';
 import * as adHoc from './operations/ad_hoc.js';
 import * as vault from './operations/vault.js';
 import * as aws from './operations/aws.js';
+import * as terraform from './operations/terraform.js';
 
 // Define a type for the tool handler functions
 type ToolHandler = (args: any) => Promise<string>;
@@ -137,10 +138,16 @@ const toolDefinitions: Record<string, ToolDefinition> = {
     schema: aws.DynamicInventorySchema,
     handler: aws.dynamicInventoryOperations,
   },
+  // Terraform Tools
+  terraform: {
+    description: 'Execute Terraform commands (init, plan, apply, destroy, validate, output, etc.)',
+    schema: terraform.TerraformSchema,
+    handler: terraform.terraformOperations,
+  },
 };
 
 
-class AnsibleMcpServer {
+class SysOperatorServer {
   private server: Server;
   // Use environment variable or fallback to default path
   private defaultInventoryPath: string = process.env.ANSIBLE_DEFAULT_INVENTORY || '/etc/ansible/hosts';
@@ -149,7 +156,7 @@ class AnsibleMcpServer {
     console.error(`Using default inventory path: ${this.defaultInventoryPath}`); // Log the path being used
     this.server = new Server(
       {
-        name: 'ansible-mcp-server',
+        name: 'mcp-sysoperator',
         version: VERSION,
       },
       {
@@ -309,9 +316,9 @@ class AnsibleMcpServer {
   async run() {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
-    console.error('Ansible MCP server running on stdio');
+    console.error('MCP SysOperator server running on stdio');
   }
 }
 
-const server = new AnsibleMcpServer();
+const server = new SysOperatorServer();
 server.run().catch(console.error);

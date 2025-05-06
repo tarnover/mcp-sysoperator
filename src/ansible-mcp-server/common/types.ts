@@ -1,5 +1,9 @@
 import { z } from 'zod';
 
+// Terraform Actions
+export const TerraformActionEnum = z.enum(['init', 'plan', 'apply', 'destroy', 'validate', 'output', 'import', 'workspace']);
+export type TerraformAction = z.infer<typeof TerraformActionEnum>;
+
 // AWS Actions
 export const EC2InstanceActionEnum = z.enum(['list', 'create', 'terminate', 'start', 'stop']);
 export type EC2InstanceAction = z.infer<typeof EC2InstanceActionEnum>;
@@ -264,3 +268,21 @@ export const ListTasksSchema = z.object({
 });
 
 export type ListTasksOptions = z.infer<typeof ListTasksSchema>;
+
+// Terraform Schema
+export const TerraformSchema = z.object({
+  action: TerraformActionEnum,
+  workingDir: z.string().min(1, 'Working directory is required'),
+  varFiles: z.array(z.string()).optional(),
+  vars: z.record(z.any()).optional(),
+  autoApprove: z.boolean().optional().default(false),
+  useLocalstack: z.boolean().optional().default(false),
+  backendConfig: z.record(z.string()).optional(),
+  state: z.string().optional(),
+  target: z.array(z.string()).optional(),
+  lockTimeout: z.string().optional(),
+  refresh: z.boolean().optional().default(true),
+  workspace: z.string().optional()
+});
+
+export type TerraformOptions = z.infer<typeof TerraformSchema>;

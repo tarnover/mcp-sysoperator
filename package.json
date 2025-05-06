@@ -1,7 +1,7 @@
 {
-  "name": "ansible-mcp-server",
+  "name": "mcp-sysoperator",
   "version": "0.1.0",
-  "description": "Model Context Protocol server for Ansible",
+  "description": "Model Context Protocol server for Infrastructure as Code operations (Ansible, Terraform)",
   "main": "build/index.js",
   "type": "module",
   "scripts": {
