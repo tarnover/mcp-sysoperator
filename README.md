@@ -307,6 +307,12 @@ To add new capabilities to the MCP server:
 4. Add the schema definition in `common/types.ts`
 5. Rebuild with `npm run build`
 
+### ⚠️ Disclaimer
+
+SysOperator is currently in active development and undergoing extensive testing. It is not recommended for use in production environments at this time. The software may experience breaking changes, incomplete features, or unexpected behavior.
+
+**Use at your own risk.**
+
 ## License
 
 MIT License - See [LICENSE](LICENSE) for details
