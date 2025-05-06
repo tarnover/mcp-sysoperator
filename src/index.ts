@@ -1,2 +1,2 @@
 #!/usr/bin/env node
-import './ansible-mcp-server/index.js';
+import './sysoperator/index.js';

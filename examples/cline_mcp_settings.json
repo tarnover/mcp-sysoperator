@@ -1,8 +1,8 @@
 {
   "mcpServers": {
-    "ansible": {
+    "sysoperator": {
       "command": "node",
-      "args": ["/absolute/path/to/mcp-ansible/build/index.js"],
+      "args": ["/absolute/path/to/mcp-sysoperator/build/index.js"],
       "env": {},
       "disabled": false,
       "autoApprove": []

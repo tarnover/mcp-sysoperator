@@ -61,7 +61,7 @@ Add the following to the `mcpServers` section:
 ```json
 {
   "mcpServers": {
-    "ansible": {
+    "sysoperator": {
       "command": "node",
       "args": ["/absolute/path/to/mcp-sysoperator/build/index.js"],
       "env": {}
@@ -80,7 +80,7 @@ Once installed and configured, the MCP server provides the following tools to th
 
 ```
 <use_mcp_tool>
-<server_name>ansible</server_name>
+<server_name>sysoperator</server_name>
 <tool_name>run_playbook</tool_name>
 <arguments>
 {
@@ -101,7 +101,7 @@ Once installed and configured, the MCP server provides the following tools to th
 
 ```
 <use_mcp_tool>
-<server_name>ansible</server_name>
+<server_name>sysoperator</server_name>
 <tool_name>list_inventory</tool_name>
 <arguments>
 {
@@ -115,7 +115,7 @@ Once installed and configured, the MCP server provides the following tools to th
 
 ```
 <use_mcp_tool>
-<server_name>ansible</server_name>
+<server_name>sysoperator</server_name>
 <tool_name>check_syntax</tool_name>
 <arguments>
 {
@@ -129,7 +129,7 @@ Once installed and configured, the MCP server provides the following tools to th
 
 ```
 <use_mcp_tool>
-<server_name>ansible</server_name>
+<server_name>sysoperator</server_name>
 <tool_name>list_tasks</tool_name>
 <arguments>
 {
@@ -143,8 +143,8 @@ Once installed and configured, the MCP server provides the following tools to th
 
 ```
 <access_mcp_resource>
-<server_name>ansible</server_name>
-<uri>ansible://inventory/default</uri>
+<server_name>sysoperator</server_name>
+<uri>sysoperator://inventory/default</uri>
 </access_mcp_resource>
 ```
 
@@ -152,7 +152,7 @@ Once installed and configured, the MCP server provides the following tools to th
 
 ```
 <use_mcp_tool>
-<server_name>ansible</server_name>
+<server_name>sysoperator</server_name>
 <tool_name>aws_s3</tool_name>
 <arguments>
 {
@@ -167,7 +167,7 @@ Once installed and configured, the MCP server provides the following tools to th
 
 ```
 <use_mcp_tool>
-<server_name>ansible</server_name>
+<server_name>sysoperator</server_name>
 <tool_name>terraform</tool_name>
 <arguments>
 {
@@ -178,7 +178,7 @@ Once installed and configured, the MCP server provides the following tools to th
 </use_mcp_tool>
 
 <use_mcp_tool>
-<server_name>ansible</server_name>
+<server_name>sysoperator</server_name>
 <tool_name>terraform</tool_name>
 <arguments>
 {
@@ -197,7 +197,7 @@ Once installed and configured, the MCP server provides the following tools to th
 
 ```
 <use_mcp_tool>
-<server_name>ansible</server_name>
+<server_name>sysoperator</server_name>
 <tool_name>terraform</tool_name>
 <arguments>
 {
@@ -217,7 +217,7 @@ Once installed and configured, the MCP server provides the following tools to th
 
 ```
 <use_mcp_tool>
-<server_name>ansible</server_name>
+<server_name>sysoperator</server_name>
 <tool_name>terraform</tool_name>
 <arguments>
 {
