@@ -1,0 +1,92 @@
+---
+# Common variables for all environments
+
+# Project information
+project_name: "lamp-stack"
+domain_name: "testerlab.com"
+
+# Environment (will be overridden by inventory)
+environment: "{{ lookup('env', 'DEPLOY_ENV') | default('localstack', true) }}"
+
+# AWS region
+aws_region: "us-east-1"
+
+# Common tags
+common_tags:
+  Project: "LAMP Stack"
+  Environment: "{{ environment }}"
+  ManagedBy: "Ansible"
+  Owner: "DevOps Team"
+
+# VPC configuration
+vpc_cidr: "10.0.0.0/16"
+public_subnet_1_cidr: "10.0.1.0/24"
+public_subnet_2_cidr: "10.0.2.0/24"
+private_subnet_1_cidr: "10.0.3.0/24"
+private_subnet_2_cidr: "10.0.4.0/24"
+private_subnet_3_cidr: "10.0.5.0/24"
+private_subnet_4_cidr: "10.0.6.0/24"
+
+# EC2 configuration
+ec2_instance_type: "t4g.small"
+ec2_ami_owner: "amazon"
+ec2_ami_name: "al2023-ami-*-arm64"
+ec2_key_name: "aws-key"
+ec2_min_instances: 2
+ec2_max_instances: 6
+ec2_desired_instances: 2
+
+# EFS configuration
+efs_performance_mode: "generalPurpose"
+efs_throughput_mode: "bursting"
+efs_mount_point: "/var/www/html/shared"
+
+# RDS configuration
+db_instance_class: "db.t4g.small"
+db_engine: "aurora-mysql"
+db_engine_version: "8.0"
+db_name: "lampdb"
+db_username: "admin"
+db_password: "{{ lookup('env', 'DB_PASSWORD') | default('ChangeMe123!', true) }}"
+db_port: 3306
+db_allocated_storage: 20
+db_backup_retention_period: 7
+db_multi_az: true
+
+# ALB configuration
+alb_http_port: 80
+alb_https_port: 443
+alb_healthcheck_path: "/health.php"
+alb_healthcheck_interval: 30
+alb_healthcheck_timeout: 5
+alb_healthcheck_healthy_threshold: 2
+alb_healthcheck_unhealthy_threshold: 2
+
+# PHP configuration
+php_version: "8.1"
+php_packages:
+  - php
+  - php-cli
+  - php-fpm
+  - php-mysqlnd
+  - php-zip
+  - php-devel
+  - php-gd
+  - php-mcrypt
+  - php-mbstring
+  - php-curl
+  - php-xml
+  - php-pear
+  - php-bcmath
+  - php-json
+
+# Apache configuration
+apache_server_admin: "admin@testerlab.com"
+apache_server_name: "{{ domain_name }}"
+apache_document_root: "/var/www/html"
+
+# Application configuration
+app_name: "lamp-app"
+app_git_repo: ""
+app_version: "main"
+app_deploy_dir: "/var/www/html"

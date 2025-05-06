@@ -1,0 +1,6 @@
+alb_sg_id: sg-alb
+web_sg_id: sg-web
+db_sg_id: sg-db
+efs_sg_id: sg-efs
+ec2_role_name: lamp-stack-ec2-role
+ec2_instance_profile_name: lamp-stack-ec2-profile

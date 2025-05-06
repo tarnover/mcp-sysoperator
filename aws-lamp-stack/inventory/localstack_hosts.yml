@@ -1,0 +1,40 @@
+---
+# LocalStack Inventory for LAMP Stack Testing
+
+all:
+  vars:
+    ansible_connection: local
+    domain_name: testerlab.com
+    environment: localstack
+    aws_cli_command: awslocal
+    aws_region: us-east-1
+
+  children:
+    webservers:
+      hosts:
+        web1:
+          ansible_host: localhost
+        web2:
+          ansible_host: localhost
+          
+    dbservers:
+      hosts:
+        db1:
+          ansible_host: localhost
+        db2:
+          ansible_host: localhost
+          
+    loadbalancers:
+      hosts:
+        alb:
+          ansible_host: localhost
+          
+    efs:
+      hosts:
+        efs1:
+          ansible_host: localhost
+          
+    localhost:
+      hosts:
+        localhost:
+          ansible_connection: local

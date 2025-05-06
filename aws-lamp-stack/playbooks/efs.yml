@@ -1,0 +1,165 @@
+---
+# EFS playbook
+# This playbook sets up the EFS file system for shared storage between web servers
+
+- name: Create EFS file system
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Include common variables
+      include_vars:
+        file: "{{ playbook_dir }}/../group_vars/all.yml"
+        
+    - name: Include environment-specific variables
+      include_vars:
+        file: "{{ playbook_dir }}/../group_vars/{{ lookup('env', 'ENVIRONMENT') | default('localstack', true) }}.yml"
+        
+    - name: Load VPC IDs
+      include_vars:
+        file: "{{ playbook_dir }}/../.vpc_ids.yml"
+        
+    - name: Load security group IDs
+      include_vars:
+        file: "{{ playbook_dir }}/../.security_ids.yml"
+      
+    - name: Create EFS file system
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_efs
+        arguments:
+          action: create
+          region: "{{ aws_region }}"
+          performanceMode: "{{ efs_performance_mode }}"
+          throughputMode: "{{ efs_throughput_mode }}"
+          encrypted: true
+          tags: "{{ aws_tags | combine({'Name': project_name + '-efs'}) }}"
+      register: efs_result
+      
+    - name: Set EFS ID fact
+      set_fact:
+        efs_id: "{{ efs_result.result.fileSystemId | default('fs-dummy') }}"
+        
+    - name: Create EFS mount target in AZ1
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_efs
+        arguments:
+          action: create_mount_target
+          region: "{{ aws_region }}"
+          fileSystemId: "{{ efs_id }}"
+          subnetId: "{{ private_subnet_1_id }}"
+          securityGroups:
+            - "{{ efs_sg_id }}"
+      register: efs_mount_target_1_result
+      
+    - name: Create EFS mount target in AZ2
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_efs
+        arguments:
+          action: create_mount_target
+          region: "{{ aws_region }}"
+          fileSystemId: "{{ efs_id }}"
+          subnetId: "{{ private_subnet_2_id }}"
+          securityGroups:
+            - "{{ efs_sg_id }}"
+      register: efs_mount_target_2_result
+      
+    - name: Wait for EFS mount targets to be available
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_efs
+        arguments:
+          action: describe_mount_targets
+          region: "{{ aws_region }}"
+          fileSystemId: "{{ efs_id }}"
+      register: efs_mount_targets
+      until: (efs_mount_targets.result.mountTargets | default([]) | length >= 2) and 
+             (efs_mount_targets.result.mountTargets | default([]) | map(attribute='lifeCycleState') | list | unique | first == 'available')
+      retries: 30
+      delay: 10
+      when: environment != 'localstack'
+      
+    - name: Simulate EFS mount targets available for LocalStack
+      set_fact:
+        efs_mount_targets:
+          result:
+            mountTargets:
+              - lifeCycleState: 'available'
+                mountTargetId: 'fsmt-dummy1'
+              - lifeCycleState: 'available'
+                mountTargetId: 'fsmt-dummy2'
+      when: environment == 'localstack'
+      
+    - name: Get EFS DNS name
+      set_fact:
+        efs_dns_name: "{{ efs_id }}.efs.{{ aws_region }}.amazonaws.com"
+        
+    - name: Save EFS ID to file
+      copy:
+        content: |
+          efs_id: {{ efs_id }}
+          efs_dns_name: {{ efs_dns_name }}
+        dest: "{{ playbook_dir }}/../.efs_ids.yml"
+        mode: '0644'
+        
+    - name: Create EFS access point for web servers
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_efs
+        arguments:
+          action: create_access_point
+          region: "{{ aws_region }}"
+          fileSystemId: "{{ efs_id }}"
+          posixUser:
+            uid: 48
+            gid: 48
+          rootDirectory:
+            path: "/shared"
+            creationInfo:
+              ownerUid: 48
+              ownerGid: 48
+              permissions: "0755"
+          tags: "{{ aws_tags | combine({'Name': project_name + '-efs-ap'}) }}"
+      register: efs_access_point_result
+      when: environment != 'localstack'
+      
+    - name: Simulate EFS access point for LocalStack
+      set_fact:
+        efs_access_point_result:
+          result:
+            accessPointId: 'fsap-dummy'
+      when: environment == 'localstack'
+      
+    - name: Set EFS access point ID fact
+      set_fact:
+        efs_access_point_id: "{{ efs_access_point_result.result.accessPointId | default('fsap-dummy') }}"
+        
+    - name: Update EFS IDs file with access point ID
+      lineinfile:
+        path: "{{ playbook_dir }}/../.efs_ids.yml"
+        line: "efs_access_point_id: {{ efs_access_point_id }}"
+        
+    - name: Create EFS backup policy
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_efs
+        arguments:
+          action: put_backup_policy
+          region: "{{ aws_region }}"
+          fileSystemId: "{{ efs_id }}"
+          backupPolicy:
+            status: "ENABLED"
+      when: environment == 'aws' and backup_enabled
+      
+    - name: Create EFS lifecycle policy
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_efs
+        arguments:
+          action: put_lifecycle_configuration
+          region: "{{ aws_region }}"
+          fileSystemId: "{{ efs_id }}"
+          lifecyclePolicies:
+            - transitionToIA: "AFTER_30_DAYS"
+      when: environment == 'aws'

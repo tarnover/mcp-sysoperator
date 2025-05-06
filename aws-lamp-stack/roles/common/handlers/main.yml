@@ -1,0 +1,14 @@
+---
+# Common role handlers
+
+- name: Restart SSH
+  service:
+    name: sshd
+    state: restarted
+  when: environment != 'localstack'
+
+- name: Restart firewalld
+  service:
+    name: firewalld
+    state: restarted
+  when: environment != 'localstack'

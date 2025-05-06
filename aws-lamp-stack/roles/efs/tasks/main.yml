@@ -1,0 +1,80 @@
+---
+# EFS role tasks
+# These tasks configure EFS mounting on the web servers
+
+- name: Install EFS utilities
+  package:
+    name: amazon-efs-utils
+    state: present
+  when: environment != 'localstack'
+
+- name: Create EFS mount point
+  file:
+    path: "{{ efs_mount_point }}"
+    state: directory
+    owner: apache
+    group: apache
+    mode: 0755
+  when: environment != 'localstack'
+
+- name: Check if EFS is already mounted
+  shell: mount | grep -q "{{ efs_mount_point }}"
+  register: efs_mounted
+  changed_when: false
+  failed_when: false
+  when: environment != 'localstack'
+
+- name: Add EFS mount to fstab
+  lineinfile:
+    path: /etc/fstab
+    line: "{{ efs_id }}.efs.{{ aws_region }}.amazonaws.com:/ {{ efs_mount_point }} efs _netdev,tls,iam 0 0"
+    state: present
+  when: environment != 'localstack'
+
+- name: Mount EFS
+  mount:
+    path: "{{ efs_mount_point }}"
+    src: "{{ efs_id }}.efs.{{ aws_region }}.amazonaws.com:/"
+    fstype: efs
+    opts: _netdev,tls,iam
+    state: mounted
+  when: environment != 'localstack' and efs_mounted.rc != 0
+
+- name: Set proper permissions for EFS mount point
+  file:
+    path: "{{ efs_mount_point }}"
+    owner: apache
+    group: apache
+    mode: 0755
+    state: directory
+  when: environment != 'localstack'
+
+- name: Create shared directories on EFS
+  file:
+    path: "{{ efs_mount_point }}/{{ item }}"
+    state: directory
+    owner: apache
+    group: apache
+    mode: 0755
+  loop:
+    - uploads
+    - cache
+    - sessions
+    - logs
+  when: environment != 'localstack'
+
+- name: Create a test file on EFS
+  copy:
+    content: "This is a test file to verify EFS is working correctly."
+    dest: "{{ efs_mount_point }}/efs-test.txt"
+    owner: apache
+    group: apache
+    mode: 0644
+  when: environment != 'localstack'
+
+- name: Create a dummy file for LocalStack testing
+  file:
+    path: /tmp/efs-role-applied
+    state: touch
+    mode: 0644
+  when: environment == 'localstack'

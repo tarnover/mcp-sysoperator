@@ -1,0 +1,118 @@
+---
+# Deploy application tasks
+# These tasks deploy the application code to the web servers
+
+- name: Check if application git repository is provided
+  debug:
+    msg: "Application git repository is not provided. Using default demo application."
+  when: app_git_repo == ""
+
+- name: Create application directory
+  file:
+    path: "{{ app_deploy_dir }}"
+    state: directory
+    owner: apache
+    group: apache
+    mode: 0755
+  when: environment != 'localstack'
+
+- name: Clone application repository if provided
+  git:
+    repo: "{{ app_git_repo }}"
+    dest: "{{ app_deploy_dir }}"
+    version: "{{ app_version }}"
+    force: yes
+  become: yes
+  become_user: apache
+  when: app_git_repo != "" and environment != 'localstack'
+
+- name: Create demo application if no git repo provided
+  block:
+    - name: Create demo index.php
+      template:
+        src: demo/index.php.j2
+        dest: "{{ app_deploy_dir }}/index.php"
+        owner: apache
+        group: apache
+        mode: 0644
+
+    - name: Create demo CSS file
+      template:
+        src: demo/style.css.j2
+        dest: "{{ app_deploy_dir }}/style.css"
+        owner: apache
+        group: apache
+        mode: 0644
+
+    - name: Create demo JavaScript file
+      template:
+        src: demo/script.js.j2
+        dest: "{{ app_deploy_dir }}/script.js"
+        owner: apache
+        group: apache
+        mode: 0644
+
+    - name: Create demo database config file
+      template:
+        src: demo/config.php.j2
+        dest: "{{ app_deploy_dir }}/config.php"
+        owner: apache
+        group: apache
+        mode: 0644
+
+    - name: Create demo database connection file
+      template:
+        src: demo/db.php.j2
+        dest: "{{ app_deploy_dir }}/db.php"
+        owner: apache
+        group: apache
+        mode: 0644
+
+    - name: Create demo API file
+      template:
+        src: demo/api.php.j2
+        dest: "{{ app_deploy_dir }}/api.php"
+        owner: apache
+        group: apache
+        mode: 0644
+
+    - name: Create demo health check file
+      template:
+        src: demo/health.php.j2
+        dest: "{{ app_deploy_dir }}/health.php"
+        owner: apache
+        group: apache
+        mode: 0644
+
+    - name: Create demo images directory
+      file:
+        path: "{{ app_deploy_dir }}/images"
+        state: directory
+        owner: apache
+        group: apache
+        mode: 0755
+
+    - name: Create demo favicon
+      template:
+        src: demo/favicon.ico.j2
+        dest: "{{ app_deploy_dir }}/favicon.ico"
+        owner: apache
+        group: apache
+        mode: 0644
+  when: app_git_repo == "" and environment != 'localstack'
+
+- name: Set proper permissions for application files
+  file:
+    path: "{{ app_deploy_dir }}"
+    owner: apache
+    group: apache
+    mode: 0755
+    recurse: yes
+  when: environment != 'localstack'
+
+- name: Create a dummy file for LocalStack testing
+  file:
+    path: /tmp/app-deployed
+    state: touch
+    mode: 0644
+  when: environment == 'localstack'

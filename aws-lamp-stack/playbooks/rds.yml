@@ -1,0 +1,205 @@
+---
+# RDS playbook
+# This playbook sets up the Aurora MySQL database cluster
+
+- name: Create Aurora MySQL database cluster
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Include common variables
+      include_vars:
+        file: "{{ playbook_dir }}/../group_vars/all.yml"
+        
+    - name: Include environment-specific variables
+      include_vars:
+        file: "{{ playbook_dir }}/../group_vars/{{ lookup('env', 'ENVIRONMENT') | default('localstack', true) }}.yml"
+        
+    - name: Load VPC IDs
+      include_vars:
+        file: "{{ playbook_dir }}/../.vpc_ids.yml"
+        
+    - name: Load security group IDs
+      include_vars:
+        file: "{{ playbook_dir }}/../.security_ids.yml"
+      
+    - name: Create DB subnet group
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_rds
+        arguments:
+          action: create_db_subnet_group
+          region: "{{ aws_region }}"
+          dbSubnetGroupName: "{{ project_name }}-db-subnet-group"
+          dbSubnetGroupDescription: "Subnet group for {{ project_name }} database"
+          subnetIds:
+            - "{{ private_subnet_3_id }}"
+            - "{{ private_subnet_4_id }}"
+          tags: "{{ aws_tags | combine({'Name': project_name + '-db-subnet-group'}) }}"
+      register: db_subnet_group_result
+      
+    - name: Create DB parameter group
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_rds
+        arguments:
+          action: create_db_parameter_group
+          region: "{{ aws_region }}"
+          dbParameterGroupName: "{{ project_name }}-db-param-group"
+          dbParameterGroupFamily: "aurora-mysql8.0"
+          description: "Parameter group for {{ project_name }} database"
+          parameters:
+            - parameterName: "max_connections"
+              parameterValue: "200"
+              applyMethod: "pending-reboot"
+            - parameterName: "character_set_server"
+              parameterValue: "utf8mb4"
+              applyMethod: "pending-reboot"
+            - parameterName: "collation_server"
+              parameterValue: "utf8mb4_unicode_ci"
+              applyMethod: "pending-reboot"
+          tags: "{{ aws_tags | combine({'Name': project_name + '-db-param-group'}) }}"
+      register: db_param_group_result
+      when: environment != 'localstack' or not localstack_skip_long_operations
+      
+    - name: Create DB cluster parameter group
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_rds
+        arguments:
+          action: create_db_cluster_parameter_group
+          region: "{{ aws_region }}"
+          dbClusterParameterGroupName: "{{ project_name }}-db-cluster-param-group"
+          dbParameterGroupFamily: "aurora-mysql8.0"
+          description: "Cluster parameter group for {{ project_name }} database"
+          parameters:
+            - parameterName: "character_set_server"
+              parameterValue: "utf8mb4"
+              applyMethod: "pending-reboot"
+            - parameterName: "collation_server"
+              parameterValue: "utf8mb4_unicode_ci"
+              applyMethod: "pending-reboot"
+          tags: "{{ aws_tags | combine({'Name': project_name + '-db-cluster-param-group'}) }}"
+      register: db_cluster_param_group_result
+      when: environment != 'localstack' or not localstack_skip_long_operations
+      
+    - name: Generate random password for database if not provided
+      set_fact:
+        db_password: "{{ lookup('password', '/dev/null length=16 chars=ascii_letters,digits,punctuation') }}"
+      when: db_password == 'ChangeMe123!'
+      
+    - name: Create Aurora MySQL cluster
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_rds
+        arguments:
+          action: create_db_cluster
+          region: "{{ aws_region }}"
+          dbClusterIdentifier: "{{ project_name }}-db-cluster"
+          engine: "{{ db_engine }}"
+          engineVersion: "{{ db_engine_version }}"
+          masterUsername: "{{ db_username }}"
+          masterPassword: "{{ db_password }}"
+          databaseName: "{{ db_name }}"
+          dbSubnetGroupName: "{{ project_name }}-db-subnet-group"
+          vpcSecurityGroupIds:
+            - "{{ db_sg_id }}"
+          dbClusterParameterGroupName: "{{ project_name }}-db-cluster-param-group"
+          backupRetentionPeriod: "{{ db_backup_retention_period }}"
+          port: "{{ db_port }}"
+          storageEncrypted: true
+          deletionProtection: "{{ environment == 'aws' }}"
+          tags: "{{ aws_tags | combine({'Name': project_name + '-db-cluster'}) }}"
+      register: db_cluster_result
+      when: environment != 'localstack' or not localstack_skip_long_operations
+      
+    - name: Set DB cluster ID fact
+      set_fact:
+        db_cluster_id: "{{ db_cluster_result.result.dbClusterIdentifier | default(project_name + '-db-cluster') }}"
+        db_cluster_endpoint: "{{ db_cluster_result.result.endpoint | default(project_name + '-db-cluster.cluster-' + 'dummy' + '.us-east-1.rds.amazonaws.com') }}"
+        db_reader_endpoint: "{{ db_cluster_result.result.readerEndpoint | default(project_name + '-db-cluster.cluster-ro-' + 'dummy' + '.us-east-1.rds.amazonaws.com') }}"
+      
+    - name: Create first Aurora MySQL instance
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_rds
+        arguments:
+          action: create_db_instance
+          region: "{{ aws_region }}"
+          dbInstanceIdentifier: "{{ project_name }}-db-instance-1"
+          dbClusterIdentifier: "{{ db_cluster_id }}"
+          engine: "{{ db_engine }}"
+          dbInstanceClass: "{{ db_instance_class }}"
+          dbParameterGroupName: "{{ project_name }}-db-param-group"
+          availabilityZone: "{{ aws_region }}a"
+          autoMinorVersionUpgrade: true
+          tags: "{{ aws_tags | combine({'Name': project_name + '-db-instance-1'}) }}"
+      register: db_instance_1_result
+      when: environment != 'localstack' or not localstack_skip_long_operations
+      
+    - name: Set DB instance 1 ID fact
+      set_fact:
+        db1_instance_id: "{{ db_instance_1_result.result.dbInstanceIdentifier | default(project_name + '-db-instance-1') }}"
+        db1_endpoint: "{{ db_instance_1_result.result.endpoint | default(project_name + '-db-instance-1.' + 'dummy' + '.us-east-1.rds.amazonaws.com') }}"
+      
+    - name: Create second Aurora MySQL instance
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_rds
+        arguments:
+          action: create_db_instance
+          region: "{{ aws_region }}"
+          dbInstanceIdentifier: "{{ project_name }}-db-instance-2"
+          dbClusterIdentifier: "{{ db_cluster_id }}"
+          engine: "{{ db_engine }}"
+          dbInstanceClass: "{{ db_instance_class }}"
+          dbParameterGroupName: "{{ project_name }}-db-param-group"
+          availabilityZone: "{{ aws_region }}b"
+          autoMinorVersionUpgrade: true
+          tags: "{{ aws_tags | combine({'Name': project_name + '-db-instance-2'}) }}"
+      register: db_instance_2_result
+      when: environment != 'localstack' or not localstack_skip_long_operations and db_multi_az
+      
+    - name: Set DB instance 2 ID fact
+      set_fact:
+        db2_instance_id: "{{ db_instance_2_result.result.dbInstanceIdentifier | default(project_name + '-db-instance-2') }}"
+        db2_endpoint: "{{ db_instance_2_result.result.endpoint | default(project_name + '-db-instance-2.' + 'dummy' + '.us-east-1.rds.amazonaws.com') }}"
+      when: environment != 'localstack' or not localstack_skip_long_operations and db_multi_az
+      
+    - name: Set DB instance 2 ID fact for LocalStack
+      set_fact:
+        db2_instance_id: "{{ project_name }}-db-instance-2"
+        db2_endpoint: "{{ project_name }}-db-instance-2.dummy.us-east-1.rds.amazonaws.com"
+      when: environment == 'localstack' and localstack_skip_long_operations or not db_multi_az
+      
+    - name: Wait for DB cluster to be available
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_rds
+        arguments:
+          action: describe_db_clusters
+          region: "{{ aws_region }}"
+          dbClusterIdentifier: "{{ db_cluster_id }}"
+      register: db_cluster_status
+      until: (db_cluster_status.result.dbClusters | default([]) | length > 0 and 
+              db_cluster_status.result.dbClusters[0].status == 'available') or 
+             environment == 'localstack'
+      retries: 60
+      delay: 30
+      when: environment != 'localstack' or not localstack_skip_long_operations
+      ignore_errors: "{{ environment == 'localstack' }}"
+      
+    - name: Save DB information to file
+      copy:
+        content: |
+          db_cluster_id: {{ db_cluster_id }}
+          db_cluster_endpoint: {{ db_cluster_endpoint }}
+          db_reader_endpoint: {{ db_reader_endpoint }}
+          db1_instance_id: {{ db1_instance_id }}
+          db1_endpoint: {{ db1_endpoint }}
+          db2_instance_id: {{ db2_instance_id }}
+          db2_endpoint: {{ db2_endpoint }}
+          db_name: {{ db_name }}
+          db_username: {{ db_username }}
+          db_password: {{ db_password }}
+        dest: "{{ playbook_dir }}/../.db_info.yml"
+        mode: '0600'

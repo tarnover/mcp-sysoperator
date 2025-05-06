@@ -1,0 +1,402 @@
+---
+# Cleanup playbook
+# This playbook removes all resources created by the LAMP stack deployment
+
+- name: Set environment variable
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Set environment fact
+      set_fact:
+        environment: "{{ lookup('env', 'ENVIRONMENT') | default('localstack', true) }}"
+      
+    - name: Display environment
+      debug:
+        msg: "Cleaning up {{ environment }} environment"
+        
+    - name: Load configuration files if they exist
+      block:
+        - name: Load DNS and SSL information
+          include_vars:
+            file: "{{ playbook_dir }}/../.dns_ssl_info.yml"
+          ignore_errors: yes
+          
+        - name: Load ALB information
+          include_vars:
+            file: "{{ playbook_dir }}/../.alb_info.yml"
+          ignore_errors: yes
+          
+        - name: Load EC2 instance information
+          include_vars:
+            file: "{{ playbook_dir }}/../.ec2_info.yml"
+          ignore_errors: yes
+          
+        - name: Load DB information
+          include_vars:
+            file: "{{ playbook_dir }}/../.db_info.yml"
+          ignore_errors: yes
+          
+        - name: Load EFS information
+          include_vars:
+            file: "{{ playbook_dir }}/../.efs_ids.yml"
+          ignore_errors: yes
+          
+        - name: Load security group information
+          include_vars:
+            file: "{{ playbook_dir }}/../.security_ids.yml"
+          ignore_errors: yes
+          
+        - name: Load VPC information
+          include_vars:
+            file: "{{ playbook_dir }}/../.vpc_ids.yml"
+          ignore_errors: yes
+          
+        - name: Include common variables
+          include_vars:
+            file: "{{ playbook_dir }}/../group_vars/all.yml"
+          ignore_errors: yes
+          
+        - name: Include environment-specific variables
+          include_vars:
+            file: "{{ playbook_dir }}/../group_vars/{{ lookup('env', 'ENVIRONMENT') | default('localstack', true) }}.yml"
+          ignore_errors: yes
+
+- name: Clean up DNS and SSL resources
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Delete Route 53 records
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_route53
+        arguments:
+          action: delete_record
+          region: "{{ aws_region }}"
+          zoneId: "{{ route53_zone_id | default('') }}"
+          recordName: "{{ item }}"
+          recordType: "{{ 'A' if item == domain_name else 'CNAME' }}"
+          recordState: "absent"
+      loop:
+        - "{{ domain_name | default('') }}"
+        - "www.{{ domain_name | default('') }}"
+      when: route53_zone_id is defined and domain_name is defined and route53_zone_id != '' and domain_name != ''
+      ignore_errors: yes
+      
+    - name: Delete Route 53 hosted zone
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_route53
+        arguments:
+          action: delete_zone
+          region: "{{ aws_region }}"
+          zoneId: "{{ route53_zone_id | default('') }}"
+      when: route53_zone_id is defined and route53_zone_id != '' and route53_create_zone | default(false)
+      ignore_errors: yes
+      
+    - name: Delete ACM certificate
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_acm
+        arguments:
+          action: delete_certificate
+          region: "{{ aws_region }}"
+          certificateArn: "{{ certificate_arn | default('') }}"
+      when: certificate_arn is defined and certificate_arn != '' and acm_create_certificate | default(false)
+      ignore_errors: yes
+
+- name: Clean up load balancer resources
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Delete HTTPS listener
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_elb
+        arguments:
+          action: delete_listener
+          region: "{{ aws_region }}"
+          listenerArn: "{{ https_listener_arn | default('') }}"
+      when: https_listener_arn is defined and https_listener_arn != ''
+      ignore_errors: yes
+      
+    - name: Delete HTTP listener
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_elb
+        arguments:
+          action: delete_listener
+          region: "{{ aws_region }}"
+          listenerArn: "{{ http_listener_arn | default('') }}"
+      when: http_listener_arn is defined and http_listener_arn != ''
+      ignore_errors: yes
+      
+    - name: Delete target group
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_elb
+        arguments:
+          action: delete_target_group
+          region: "{{ aws_region }}"
+          targetGroupArn: "{{ http_target_group_arn | default('') }}"
+      when: http_target_group_arn is defined and http_target_group_arn != ''
+      ignore_errors: yes
+      
+    - name: Delete load balancer
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_elb
+        arguments:
+          action: delete
+          region: "{{ aws_region }}"
+          loadBalancerArn: "{{ alb_arn | default('') }}"
+      when: alb_arn is defined and alb_arn != ''
+      ignore_errors: yes
+
+- name: Clean up EC2 resources
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Delete auto scaling group
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_ec2
+        arguments:
+          action: delete_auto_scaling_group
+          region: "{{ aws_region }}"
+          autoScalingGroupName: "{{ asg_name | default('') }}"
+          forceDelete: true
+      when: asg_name is defined and asg_name != ''
+      ignore_errors: yes
+      
+    - name: Delete launch template
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_ec2
+        arguments:
+          action: delete_launch_template
+          region: "{{ aws_region }}"
+          launchTemplateId: "{{ launch_template_id | default('') }}"
+      when: launch_template_id is defined and launch_template_id != ''
+      ignore_errors: yes
+      
+    - name: Terminate EC2 instances
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_ec2
+        arguments:
+          action: terminate
+          region: "{{ aws_region }}"
+          instanceIds:
+            - "{{ web1_instance_id | default('') }}"
+            - "{{ web2_instance_id | default('') }}"
+      when: (web1_instance_id is defined and web1_instance_id != '') or (web2_instance_id is defined and web2_instance_id != '')
+      ignore_errors: yes
+
+- name: Clean up RDS resources
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Delete DB instances
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_rds
+        arguments:
+          action: delete_db_instance
+          region: "{{ aws_region }}"
+          dbInstanceIdentifier: "{{ item }}"
+          skipFinalSnapshot: true
+      loop:
+        - "{{ db1_instance_id | default('') }}"
+        - "{{ db2_instance_id | default('') }}"
+      when: (db1_instance_id is defined and db1_instance_id != '') or (db2_instance_id is defined and db2_instance_id != '')
+      ignore_errors: yes
+      
+    - name: Delete DB cluster
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_rds
+        arguments:
+          action: delete_db_cluster
+          region: "{{ aws_region }}"
+          dbClusterIdentifier: "{{ db_cluster_id | default('') }}"
+          skipFinalSnapshot: true
+      when: db_cluster_id is defined and db_cluster_id != ''
+      ignore_errors: yes
+      
+    - name: Delete DB parameter groups
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_rds
+        arguments:
+          action: "{{ item.action }}"
+          region: "{{ aws_region }}"
+          "{{ item.param }}": "{{ project_name }}-{{ item.suffix }}"
+      loop:
+        - { action: 'delete_db_parameter_group', param: 'dbParameterGroupName', suffix: 'db-param-group' }
+        - { action: 'delete_db_cluster_parameter_group', param: 'dbClusterParameterGroupName', suffix: 'db-cluster-param-group' }
+      when: project_name is defined and project_name != ''
+      ignore_errors: yes
+      
+    - name: Delete DB subnet group
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_rds
+        arguments:
+          action: delete_db_subnet_group
+          region: "{{ aws_region }}"
+          dbSubnetGroupName: "{{ project_name }}-db-subnet-group"
+      when: project_name is defined and project_name != ''
+      ignore_errors: yes
+
+- name: Clean up EFS resources
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Delete mount targets
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_efs
+        arguments:
+          action: delete_mount_target
+          region: "{{ aws_region }}"
+          mountTargetId: "{{ item }}"
+      loop: "{{ efs_mount_target_ids | default([]) }}"
+      when: efs_mount_target_ids is defined and efs_mount_target_ids | length > 0
+      ignore_errors: yes
+      
+    - name: Delete EFS file system
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_efs
+        arguments:
+          action: delete_file_system
+          region: "{{ aws_region }}"
+          fileSystemId: "{{ efs_id | default('') }}"
+      when: efs_id is defined and efs_id != ''
+      ignore_errors: yes
+
+- name: Clean up security groups
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Delete security groups
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_ec2
+        arguments:
+          action: delete_security_group
+          region: "{{ aws_region }}"
+          groupId: "{{ item }}"
+      loop:
+        - "{{ alb_sg_id | default('') }}"
+        - "{{ web_sg_id | default('') }}"
+        - "{{ db_sg_id | default('') }}"
+        - "{{ efs_sg_id | default('') }}"
+      when: (alb_sg_id is defined and alb_sg_id != '') or (web_sg_id is defined and web_sg_id != '') or (db_sg_id is defined and db_sg_id != '') or (efs_sg_id is defined and efs_sg_id != '')
+      ignore_errors: yes
+
+- name: Clean up VPC resources
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Delete NAT gateways
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: delete_nat_gateway
+          region: "{{ aws_region }}"
+          natGatewayId: "{{ item }}"
+      loop:
+        - "{{ nat_gateway_1_id | default('') }}"
+        - "{{ nat_gateway_2_id | default('') }}"
+      when: (nat_gateway_1_id is defined and nat_gateway_1_id != '') or (nat_gateway_2_id is defined and nat_gateway_2_id != '')
+      ignore_errors: yes
+      
+    - name: Release elastic IPs
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: release_address
+          region: "{{ aws_region }}"
+          allocationId: "{{ item }}"
+      loop:
+        - "{{ eip_1_id | default('') }}"
+        - "{{ eip_2_id | default('') }}"
+      when: (eip_1_id is defined and eip_1_id != '') or (eip_2_id is defined and eip_2_id != '')
+      ignore_errors: yes
+      
+    - name: Delete subnets
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: delete_subnet
+          region: "{{ aws_region }}"
+          subnetId: "{{ item }}"
+      loop:
+        - "{{ public_subnet_1_id | default('') }}"
+        - "{{ public_subnet_2_id | default('') }}"
+        - "{{ private_subnet_1_id | default('') }}"
+        - "{{ private_subnet_2_id | default('') }}"
+        - "{{ private_subnet_3_id | default('') }}"
+        - "{{ private_subnet_4_id | default('') }}"
+      when: (public_subnet_1_id is defined and public_subnet_1_id != '') or (public_subnet_2_id is defined and public_subnet_2_id != '') or (private_subnet_1_id is defined and private_subnet_1_id != '') or (private_subnet_2_id is defined and private_subnet_2_id != '') or (private_subnet_3_id is defined and private_subnet_3_id != '') or (private_subnet_4_id is defined and private_subnet_4_id != '')
+      ignore_errors: yes
+      
+    - name: Delete route tables
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: delete_route_table
+          region: "{{ aws_region }}"
+          routeTableId: "{{ item }}"
+      loop:
+        - "{{ public_route_table_id | default('') }}"
+        - "{{ private_route_table_1_id | default('') }}"
+        - "{{ private_route_table_2_id | default('') }}"
+      when: (public_route_table_id is defined and public_route_table_id != '') or (private_route_table_1_id is defined and private_route_table_1_id != '') or (private_route_table_2_id is defined and private_route_table_2_id != '')
+      ignore_errors: yes
+      
+    - name: Delete internet gateway
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: delete_internet_gateway
+          region: "{{ aws_region }}"
+          internetGatewayId: "{{ internet_gateway_id | default('') }}"
+          vpcId: "{{ vpc_id | default('') }}"
+      when: internet_gateway_id is defined and internet_gateway_id != '' and vpc_id is defined and vpc_id != ''
+      ignore_errors: yes
+      
+    - name: Delete VPC
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: delete
+          region: "{{ aws_region }}"
+          vpcId: "{{ vpc_id | default('') }}"
+      when: vpc_id is defined and vpc_id != ''
+      ignore_errors: yes
+
+- name: Clean up local files
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Remove temporary files
+      file:
+        path: "{{ playbook_dir }}/../{{ item }}"
+        state: absent
+      loop:
+        - .vpc_ids.yml
+        - .security_ids.yml
+        - .efs_ids.yml
+        - .db_info.yml
+        - .ec2_info.yml
+        - .alb_info.yml
+        - .dns_ssl_info.yml
+      ignore_errors: yes

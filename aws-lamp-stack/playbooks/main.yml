@@ -1,0 +1,47 @@
+---
+# Main playbook
+# This playbook orchestrates the entire LAMP stack deployment
+
+- name: Set environment variable
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Set environment fact
+      set_fact:
+        environment: "{{ lookup('env', 'ENVIRONMENT') | default('localstack', true) }}"
+      register: env_result
+      
+    - name: Display environment
+      debug:
+        msg: "Deploying to {{ environment }} environment"
+
+# Infrastructure playbooks
+- import_playbook: vpc.yml
+- import_playbook: security.yml
+- import_playbook: efs.yml
+  vars:
+    any_errors_fatal: false
+- import_playbook: rds.yml
+  vars:
+    any_errors_fatal: false
+- import_playbook: ec2.yml
+  vars:
+    any_errors_fatal: false
+- import_playbook: loadbalancer.yml
+  vars:
+    any_errors_fatal: false
+- import_playbook: dns_ssl.yml
+  vars:
+    any_errors_fatal: false
+
+# Configuration playbooks
+- name: Configure web servers
+  hosts: web_servers
+  become: true
+  roles:
+    - common
+    - efs
+    - web
+    - db
+  vars:
+    deploy_app: true

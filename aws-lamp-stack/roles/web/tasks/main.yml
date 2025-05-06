@@ -1,0 +1,107 @@
+---
+# Web server role tasks
+# These tasks configure Apache and PHP for the web servers
+
+- name: Install Apache and PHP packages
+  package:
+    name:
+      - httpd
+      - mod_ssl
+      - "{{ php_packages }}"
+    state: present
+  when: environment != 'localstack'
+
+- name: Configure Apache
+  template:
+    src: httpd.conf.j2
+    dest: /etc/httpd/conf/httpd.conf
+    owner: root
+    group: root
+    mode: 0644
+  notify: Restart Apache
+  when: environment != 'localstack'
+
+- name: Configure Apache SSL
+  template:
+    src: ssl.conf.j2
+    dest: /etc/httpd/conf.d/ssl.conf
+    owner: root
+    group: root
+    mode: 0644
+  notify: Restart Apache
+  when: environment != 'localstack'
+
+- name: Configure PHP
+  template:
+    src: php.ini.j2
+    dest: /etc/php.ini
+    owner: root
+    group: root
+    mode: 0644
+  notify: Restart Apache
+  when: environment != 'localstack'
+
+- name: Create web document root
+  file:
+    path: "{{ apache_document_root }}"
+    state: directory
+    owner: apache
+    group: apache
+    mode: 0755
+  when: environment != 'localstack'
+
+- name: Create index.php file
+  template:
+    src: index.php.j2
+    dest: "{{ apache_document_root }}/index.php"
+    owner: apache
+    group: apache
+    mode: 0644
+  when: environment != 'localstack'
+
+- name: Create health check file
+  template:
+    src: health.php.j2
+    dest: "{{ apache_document_root }}/health.php"
+    owner: apache
+    group: apache
+    mode: 0644
+  when: environment != 'localstack'
+
+- name: Create info.php file
+  template:
+    src: info.php.j2
+    dest: "{{ apache_document_root }}/info.php"
+    owner: apache
+    group: apache
+    mode: 0644
+  when: environment != 'localstack'
+
+- name: Enable and start Apache
+  service:
+    name: httpd
+    state: started
+    enabled: yes
+  when: environment != 'localstack'
+
+- name: Configure firewall for Apache
+  firewalld:
+    service: "{{ item }}"
+    permanent: yes
+    state: enabled
+  loop:
+    - http
+    - https
+  notify: Restart firewalld
+  when: environment != 'localstack'
+
+- name: Deploy application if requested
+  include_tasks: deploy_app.yml
+  when: deploy_app | default(false)
+
+- name: Create a dummy file for LocalStack testing
+  file:
+    path: /tmp/web-role-applied
+    state: touch
+    mode: 0644
+  when: environment == 'localstack'

@@ -1,0 +1,199 @@
+---
+# Load balancer playbook
+# This playbook sets up the Application Load Balancer (ALB)
+
+- name: Create Application Load Balancer
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Include common variables
+      include_vars:
+        file: "{{ playbook_dir }}/../group_vars/all.yml"
+        
+    - name: Include environment-specific variables
+      include_vars:
+        file: "{{ playbook_dir }}/../group_vars/{{ lookup('env', 'ENVIRONMENT') | default('localstack', true) }}.yml"
+        
+    - name: Load VPC IDs
+      include_vars:
+        file: "{{ playbook_dir }}/../.vpc_ids.yml"
+        
+    - name: Load security group IDs
+      include_vars:
+        file: "{{ playbook_dir }}/../.security_ids.yml"
+        
+    - name: Load EC2 instance information
+      include_vars:
+        file: "{{ playbook_dir }}/../.ec2_info.yml"
+      
+    - name: Create target group for HTTP
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_elb
+        arguments:
+          action: create_target_group
+          region: "{{ aws_region }}"
+          name: "{{ project_name }}-tg-http"
+          protocol: "HTTP"
+          port: 80
+          vpcId: "{{ vpc_id }}"
+          healthCheckProtocol: "HTTP"
+          healthCheckPath: "{{ alb_healthcheck_path }}"
+          healthCheckPort: "traffic-port"
+          healthCheckIntervalSeconds: "{{ alb_healthcheck_interval }}"
+          healthCheckTimeoutSeconds: "{{ alb_healthcheck_timeout }}"
+          healthyThresholdCount: "{{ alb_healthcheck_healthy_threshold }}"
+          unhealthyThresholdCount: "{{ alb_healthcheck_unhealthy_threshold }}"
+          targetType: "instance"
+          tags: "{{ aws_tags | combine({'Name': project_name + '-tg-http'}) }}"
+      register: http_target_group_result
+      
+    - name: Set HTTP target group ARN fact
+      set_fact:
+        http_target_group_arn: "{{ http_target_group_result.result.targetGroupArn | default('arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/' + project_name + '-tg-http/dummy') }}"
+      
+    - name: Register EC2 instances with HTTP target group
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_elb
+        arguments:
+          action: register_targets
+          region: "{{ aws_region }}"
+          targetGroupArn: "{{ http_target_group_arn }}"
+          targets:
+            - id: "{{ web1_instance_id }}"
+              port: 80
+            - id: "{{ web2_instance_id }}"
+              port: 80
+      when: environment == 'localstack'
+      
+    - name: Create Application Load Balancer
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_elb
+        arguments:
+          action: create
+          region: "{{ aws_region }}"
+          name: "{{ project_name }}-alb"
+          lbType: "application"
+          scheme: "internet-facing"
+          subnets:
+            - "{{ public_subnet_1_id }}"
+            - "{{ public_subnet_2_id }}"
+          securityGroups:
+            - "{{ alb_sg_id }}"
+          tags: "{{ aws_tags | combine({'Name': project_name + '-alb'}) }}"
+      register: alb_result
+      
+    - name: Set ALB ARN and DNS name facts
+      set_fact:
+        alb_arn: "{{ alb_result.result.loadBalancerArn | default('arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/' + project_name + '-alb/dummy') }}"
+        alb_dns_name: "{{ alb_result.result.dnsName | default(project_name + '-alb-dummy.us-east-1.elb.amazonaws.com') }}"
+      
+    - name: Create HTTP listener
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_elb
+        arguments:
+          action: create_listener
+          region: "{{ aws_region }}"
+          loadBalancerArn: "{{ alb_arn }}"
+          protocol: "HTTP"
+          port: "{{ alb_http_port }}"
+          defaultActions:
+            - type: "redirect"
+              redirectConfig:
+                protocol: "HTTPS"
+                port: "{{ alb_https_port }}"
+                statusCode: "HTTP_301"
+      register: http_listener_result
+      
+    - name: Set HTTP listener ARN fact
+      set_fact:
+        http_listener_arn: "{{ http_listener_result.result.listenerArn | default('arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/' + project_name + '-alb/dummy/dummy') }}"
+      
+    - name: Check if ACM certificate exists
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_acm
+        arguments:
+          action: list_certificates
+          region: "{{ aws_region }}"
+          certificateStatuses:
+            - "ISSUED"
+      register: acm_certificates
+      when: environment != 'localstack' or not localstack_skip_long_operations
+      
+    - name: Set certificate ARN for LocalStack
+      set_fact:
+        certificate_arn: "arn:aws:acm:us-east-1:123456789012:certificate/dummy"
+      when: environment == 'localstack'
+      
+    - name: Find certificate for domain
+      set_fact:
+        certificate_arn: "{{ item.certificateArn }}"
+      loop: "{{ acm_certificates.certificateSummaryList | default([]) }}"
+      when: (environment != 'localstack' or not localstack_skip_long_operations) and item.domainName == domain_name
+      
+    - name: Create HTTPS listener
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_elb
+        arguments:
+          action: create_listener
+          region: "{{ aws_region }}"
+          loadBalancerArn: "{{ alb_arn }}"
+          protocol: "HTTPS"
+          port: "{{ alb_https_port }}"
+          certificates:
+            - certificateArn: "{{ certificate_arn }}"
+          sslPolicy: "ELBSecurityPolicy-TLS-1-2-2017-01"
+          defaultActions:
+            - type: "forward"
+              targetGroupArn: "{{ http_target_group_arn }}"
+      register: https_listener_result
+      
+    - name: Set HTTPS listener ARN fact
+      set_fact:
+        https_listener_arn: "{{ https_listener_result.result.listenerArn | default('arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/' + project_name + '-alb/dummy/dummy2') }}"
+      
+    - name: Wait for ALB to be active
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_elb
+        arguments:
+          action: describe_load_balancers
+          region: "{{ aws_region }}"
+          names:
+            - "{{ project_name }}-alb"
+      register: alb_status
+      until: (alb_status.result.loadBalancers | default([]) | length > 0 and 
+              alb_status.result.loadBalancers[0].state.code == 'active') or
+             environment == 'localstack'
+      retries: 30
+      delay: 10
+      when: environment != 'localstack' or not localstack_skip_long_operations
+      ignore_errors: "{{ environment == 'localstack' }}"
+      
+    - name: Save ALB information to file
+      copy:
+        content: |
+          alb_arn: {{ alb_arn }}
+          alb_dns_name: {{ alb_dns_name }}
+          http_target_group_arn: {{ http_target_group_arn }}
+          http_listener_arn: {{ http_listener_arn }}
+          https_listener_arn: {{ https_listener_arn }}
+        dest: "{{ playbook_dir }}/../.alb_info.yml"
+        mode: '0644'
+      
+    - name: Update Auto Scaling Group with target group
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_ec2
+        arguments:
+          action: update_auto_scaling_group
+          region: "{{ aws_region }}"
+          autoScalingGroupName: "{{ asg_name }}"
+          targetGroupARNs:
+            - "{{ http_target_group_arn }}"
+      when: environment != 'localstack' or not localstack_skip_long_operations

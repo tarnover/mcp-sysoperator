@@ -1,0 +1,151 @@
+---
+# Common role tasks
+# These tasks are applied to all servers
+
+- name: Update all packages
+  package:
+    name: "*"
+    state: latest
+  when: environment != 'localstack'
+
+- name: Install common packages
+  package:
+    name:
+      - vim
+      - htop
+      - git
+      - curl
+      - wget
+      - unzip
+      - python3
+      - python3-pip
+      - jq
+      - net-tools
+      - ntp
+      - logrotate
+    state: present
+  when: environment != 'localstack'
+
+- name: Set timezone to UTC
+  timezone:
+    name: UTC
+  when: environment != 'localstack'
+
+- name: Configure NTP
+  service:
+    name: ntpd
+    state: started
+    enabled: yes
+  when: environment != 'localstack'
+
+- name: Create admin user
+  user:
+    name: admin
+    groups: wheel
+    shell: /bin/bash
+    create_home: yes
+  when: environment != 'localstack'
+
+- name: Set up sudo for admin user
+  lineinfile:
+    path: /etc/sudoers.d/admin
+    line: "admin ALL=(ALL) NOPASSWD: ALL"
+    state: present
+    mode: 0440
+    create: yes
+    validate: 'visudo -cf %s'
+  when: environment != 'localstack'
+
+- name: Set up SSH authorized keys for admin user
+  authorized_key:
+    user: admin
+    key: "{{ lookup('env', 'SSH_PUBLIC_KEY') | default('ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQD3F6tyPEFEzV0LX3X8BsXdMsQz1x2cEikKDEY0aIj41qgxMCP/iteneqXSIFZBp5vizPvaoIR3Um9xK7PGoW8giupGn+EPuxIA4cDM4vzOqOkiMPhz5XK0whEjkVzTo4+S0puvDZuwIsdiW9mxhJc7tgBNL0cYlWSYVkz4G/fslNfRPW5mYAM49f4fhtxPb5ok4Q2Lg9dPKVHO/Bgeu5woMc7RY0p1ej6D4CKFE6lymSDJpW0YHX/wqE9+cfEauh7xZcG0q9t2ta6F6fmX0agvpFyZo8aFbXeUBr7osSCJNgvavWbM/06niWrOvYX2xwWdhXmXSrbX8ZbabVohBK41 example@example.com') }}"
+    state: present
+  when: environment != 'localstack'
+
+- name: Configure SSH server
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+    state: present
+  loop:
+    - { regexp: '^PermitRootLogin', line: 'PermitRootLogin no' }
+    - { regexp: '^PasswordAuthentication', line: 'PasswordAuthentication no' }
+    - { regexp: '^X11Forwarding', line: 'X11Forwarding no' }
+    - { regexp: '^MaxAuthTries', line: 'MaxAuthTries 3' }
+  notify: Restart SSH
+  when: environment != 'localstack'
+
+- name: Set up basic firewall rules
+  firewalld:
+    service: "{{ item }}"
+    permanent: yes
+    state: enabled
+  loop:
+    - ssh
+    - http
+    - https
+  notify: Restart firewalld
+  when: environment != 'localstack'
+
+- name: Configure logrotate
+  copy:
+    content: |
+      /var/log/*.log {
+        weekly
+        rotate 4
+        compress
+        delaycompress
+        missingok
+        notifempty
+        create 0640 root root
+      }
+    dest: /etc/logrotate.d/custom
+    owner: root
+    group: root
+    mode: 0644
+  when: environment != 'localstack'
+
+- name: Set up basic monitoring
+  copy:
+    content: |
+      #!/bin/bash
+      # Basic system monitoring script
+      
+      DATE=$(date '+%Y-%m-%d %H:%M:%S')
+      HOSTNAME=$(hostname)
+      UPTIME=$(uptime)
+      LOAD=$(uptime | awk '{print $(NF-2)" "$(NF-1)" "$(NF)}')
+      MEMORY=$(free -h)
+      DISK=$(df -h)
+      
+      echo "===== System Report: $DATE ====="
+      echo "Hostname: $HOSTNAME"
+      echo "Uptime: $UPTIME"
+      echo "Load: $LOAD"
+      echo "Memory:"
+      echo "$MEMORY"
+      echo "Disk:"
+      echo "$DISK"
+      echo "================================="
+    dest: /usr/local/bin/system-monitor.sh
+    owner: root
+    group: root
+    mode: 0755
+  when: environment != 'localstack'
+
+- name: Set up cron job for monitoring
+  cron:
+    name: "System monitoring"
+    minute: "0"
+    hour: "*/6"
+    job: "/usr/local/bin/system-monitor.sh > /var/log/system-monitor.log 2>&1"
+  when: environment != 'localstack'
+
+- name: Create a dummy file for LocalStack testing
+  file:
+    path: /tmp/common-role-applied
+    state: touch
+    mode: 0644
+  when: environment == 'localstack'

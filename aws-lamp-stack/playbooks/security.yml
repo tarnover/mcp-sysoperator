@@ -1,0 +1,277 @@
+---
+# Security playbook
+# This playbook sets up security groups and IAM roles for the LAMP stack
+
+- name: Create security groups and IAM roles
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Include common variables
+      include_vars:
+        file: "{{ playbook_dir }}/../group_vars/all.yml"
+        
+    - name: Include environment-specific variables
+      include_vars:
+        file: "{{ playbook_dir }}/../group_vars/{{ lookup('env', 'ENVIRONMENT') | default('localstack', true) }}.yml"
+        
+    - name: Load VPC IDs
+      include_vars:
+        file: "{{ playbook_dir }}/../.vpc_ids.yml"
+      
+    - name: Create ALB security group
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: create_security_group
+          region: "{{ aws_region }}"
+          vpcId: "{{ vpc_id }}"
+          groupName: "{{ project_name }}-alb-sg"
+          description: "Security group for ALB"
+          tags: "{{ aws_tags | combine({'Name': project_name + '-alb-sg'}) }}"
+      register: alb_sg_result
+      
+    - name: Set ALB security group ID fact
+      set_fact:
+        alb_sg_id: "{{ alb_sg_result.result.groupId | default('sg-alb') }}"
+        
+    - name: Add HTTP ingress rule to ALB security group
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: authorize_security_group_ingress
+          region: "{{ aws_region }}"
+          groupId: "{{ alb_sg_id }}"
+          ipProtocol: tcp
+          fromPort: 80
+          toPort: 80
+          cidrIp: "0.0.0.0/0"
+          
+    - name: Add HTTPS ingress rule to ALB security group
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: authorize_security_group_ingress
+          region: "{{ aws_region }}"
+          groupId: "{{ alb_sg_id }}"
+          ipProtocol: tcp
+          fromPort: 443
+          toPort: 443
+          cidrIp: "0.0.0.0/0"
+          
+    - name: Create web server security group
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: create_security_group
+          region: "{{ aws_region }}"
+          vpcId: "{{ vpc_id }}"
+          groupName: "{{ project_name }}-web-sg"
+          description: "Security group for web servers"
+          tags: "{{ aws_tags | combine({'Name': project_name + '-web-sg'}) }}"
+      register: web_sg_result
+      
+    - name: Set web security group ID fact
+      set_fact:
+        web_sg_id: "{{ web_sg_result.result.groupId | default('sg-web') }}"
+        
+    - name: Add HTTP ingress rule from ALB to web security group
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: authorize_security_group_ingress
+          region: "{{ aws_region }}"
+          groupId: "{{ web_sg_id }}"
+          ipProtocol: tcp
+          fromPort: 80
+          toPort: 80
+          sourceSecurityGroupId: "{{ alb_sg_id }}"
+          
+    - name: Add HTTPS ingress rule from ALB to web security group
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: authorize_security_group_ingress
+          region: "{{ aws_region }}"
+          groupId: "{{ web_sg_id }}"
+          ipProtocol: tcp
+          fromPort: 443
+          toPort: 443
+          sourceSecurityGroupId: "{{ alb_sg_id }}"
+          
+    - name: Add SSH ingress rule to web security group (for administration)
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: authorize_security_group_ingress
+          region: "{{ aws_region }}"
+          groupId: "{{ web_sg_id }}"
+          ipProtocol: tcp
+          fromPort: 22
+          toPort: 22
+          cidrIp: "{{ lookup('env', 'ADMIN_IP') | default('0.0.0.0/0', true) }}"
+          
+    - name: Create database security group
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: create_security_group
+          region: "{{ aws_region }}"
+          vpcId: "{{ vpc_id }}"
+          groupName: "{{ project_name }}-db-sg"
+          description: "Security group for database servers"
+          tags: "{{ aws_tags | combine({'Name': project_name + '-db-sg'}) }}"
+      register: db_sg_result
+      
+    - name: Set database security group ID fact
+      set_fact:
+        db_sg_id: "{{ db_sg_result.result.groupId | default('sg-db') }}"
+        
+    - name: Add MySQL ingress rule from web servers to database security group
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: authorize_security_group_ingress
+          region: "{{ aws_region }}"
+          groupId: "{{ db_sg_id }}"
+          ipProtocol: tcp
+          fromPort: 3306
+          toPort: 3306
+          sourceSecurityGroupId: "{{ web_sg_id }}"
+          
+    - name: Create EFS security group
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: create_security_group
+          region: "{{ aws_region }}"
+          vpcId: "{{ vpc_id }}"
+          groupName: "{{ project_name }}-efs-sg"
+          description: "Security group for EFS"
+          tags: "{{ aws_tags | combine({'Name': project_name + '-efs-sg'}) }}"
+      register: efs_sg_result
+      
+    - name: Set EFS security group ID fact
+      set_fact:
+        efs_sg_id: "{{ efs_sg_result.result.groupId | default('sg-efs') }}"
+        
+    - name: Add NFS ingress rule from web servers to EFS security group
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: authorize_security_group_ingress
+          region: "{{ aws_region }}"
+          groupId: "{{ efs_sg_id }}"
+          ipProtocol: tcp
+          fromPort: 2049
+          toPort: 2049
+          sourceSecurityGroupId: "{{ web_sg_id }}"
+          
+    - name: Create IAM role for EC2 instances
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_iam
+        arguments:
+          action: create_role
+          region: "{{ aws_region }}"
+          roleName: "{{ project_name }}-ec2-role"
+          assumeRolePolicyDocument: |
+            {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Principal": {
+                    "Service": "ec2.amazonaws.com"
+                  },
+                  "Action": "sts:AssumeRole"
+                }
+              ]
+            }
+          path: "/"
+          managedPolicies:
+            - "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      register: ec2_role_result
+      when: environment != 'localstack' or not localstack_skip_long_operations
+      
+    - name: Set EC2 role name fact
+      set_fact:
+        ec2_role_name: "{{ ec2_role_result.roleName | default(project_name + '-ec2-role') }}"
+      
+    - name: Create IAM policy for EC2 instances to access EFS
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_iam
+        arguments:
+          action: create_policy
+          region: "{{ aws_region }}"
+          policyName: "{{ project_name }}-ec2-efs-policy"
+          policyDocument: |
+            {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "elasticfilesystem:ClientMount",
+                    "elasticfilesystem:ClientWrite"
+                  ],
+                  "Resource": "*"
+                }
+              ]
+            }
+      register: ec2_efs_policy_result
+      when: environment != 'localstack' or not localstack_skip_long_operations
+      
+    - name: Set EC2 EFS policy ARN fact
+      set_fact:
+        ec2_efs_policy_arn: "{{ ec2_efs_policy_result.policyArn | default('arn:aws:iam::123456789012:policy/' + project_name + '-ec2-efs-policy') }}"
+      
+    - name: Attach EFS policy to EC2 role
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_iam
+        arguments:
+          action: attach_role_policy
+          region: "{{ aws_region }}"
+          roleName: "{{ ec2_role_name }}"
+          policyArn: "{{ ec2_efs_policy_arn }}"
+      when: environment != 'localstack' or not localstack_skip_long_operations
+      
+    - name: Create IAM instance profile for EC2 instances
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_iam
+        arguments:
+          action: create_instance_profile
+          region: "{{ aws_region }}"
+          instanceProfileName: "{{ project_name }}-ec2-profile"
+          roleName: "{{ ec2_role_name }}"
+      register: ec2_profile_result
+      when: environment != 'localstack' or not localstack_skip_long_operations
+      
+    - name: Set EC2 instance profile name fact
+      set_fact:
+        ec2_instance_profile_name: "{{ ec2_profile_result.instanceProfileName | default(project_name + '-ec2-profile') }}"
+      
+    - name: Save security group IDs to file
+      copy:
+        content: |
+          alb_sg_id: {{ alb_sg_id }}
+          web_sg_id: {{ web_sg_id }}
+          db_sg_id: {{ db_sg_id }}
+          efs_sg_id: {{ efs_sg_id }}
+          ec2_role_name: {{ ec2_role_name }}
+          ec2_instance_profile_name: {{ ec2_instance_profile_name }}
+        dest: "{{ playbook_dir }}/../.security_ids.yml"
+        mode: '0644'

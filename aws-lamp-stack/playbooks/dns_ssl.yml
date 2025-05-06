@@ -1,0 +1,195 @@
+---
+# DNS and SSL playbook
+# This playbook sets up Route 53 DNS records and ACM SSL certificate
+
+- name: Configure DNS and SSL
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Include common variables
+      include_vars:
+        file: "{{ playbook_dir }}/../group_vars/all.yml"
+        
+    - name: Include environment-specific variables
+      include_vars:
+        file: "{{ playbook_dir }}/../group_vars/{{ lookup('env', 'ENVIRONMENT') | default('localstack', true) }}.yml"
+        
+    - name: Load ALB information
+      include_vars:
+        file: "{{ playbook_dir }}/../.alb_info.yml"
+      
+    - name: Check if Route 53 hosted zone exists
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_route53
+        arguments:
+          action: list_zones
+          region: "{{ aws_region }}"
+      register: route53_zones
+      when: environment != 'localstack' or not localstack_skip_long_operations
+      
+    - name: Find hosted zone for domain
+      set_fact:
+        route53_zone_id: "{{ item.id }}"
+      loop: "{{ route53_zones.hostedZones | default([]) }}"
+      when: (environment != 'localstack' or not localstack_skip_long_operations) and item.name == domain_name + '.' and not route53_create_zone
+      
+    - name: Create Route 53 hosted zone if needed
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_route53
+        arguments:
+          action: create_zone
+          region: "{{ aws_region }}"
+          zoneName: "{{ domain_name }}"
+          comment: "Hosted zone for {{ project_name }}"
+      register: zone_result
+      when: (environment != 'localstack' or not localstack_skip_long_operations) and (route53_create_zone or route53_zone_id is not defined)
+      
+    - name: Set zone ID from creation result
+      set_fact:
+        route53_zone_id: "{{ zone_result.result.hostedZone.id | default('Z123456789ABCDEFGHIJK') }}"
+      when: (environment != 'localstack' or not localstack_skip_long_operations) and (route53_create_zone or route53_zone_id is not defined)
+      
+    - name: Set dummy zone ID for LocalStack
+      set_fact:
+        route53_zone_id: "Z123456789ABCDEFGHIJK"
+      when: environment == 'localstack' and route53_zone_id is not defined
+      
+    - name: Create A record for domain pointing to ALB
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_route53
+        arguments:
+          action: create_record
+          region: "{{ aws_region }}"
+          zoneId: "{{ route53_zone_id }}"
+          recordName: "{{ domain_name }}"
+          recordType: "A"
+          recordTtl: 300
+          recordState: "present"
+          recordValue: "{{ alb_dns_name }}"
+          aliasTarget:
+            hostedZoneId: "{{ alb_result.canonicalHostedZoneId | default('Z35SXDOTRQ7X7K') }}"  # ALB hosted zone ID
+            dnsName: "{{ alb_dns_name }}"
+            evaluateTargetHealth: true
+      register: a_record_result
+      
+    - name: Create CNAME record for www subdomain
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_route53
+        arguments:
+          action: create_record
+          region: "{{ aws_region }}"
+          zoneId: "{{ route53_zone_id }}"
+          recordName: "www.{{ domain_name }}"
+          recordType: "CNAME"
+          recordTtl: 300
+          recordState: "present"
+          recordValue: "{{ domain_name }}"
+      register: cname_record_result
+      
+    - name: Check if ACM certificate exists
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_acm
+        arguments:
+          action: list_certificates
+          region: "{{ aws_region }}"
+      register: acm_certificates
+      when: environment != 'localstack' or not localstack_skip_long_operations
+      
+    - name: Find certificate for domain
+      set_fact:
+        certificate_arn: "{{ item.certificateArn }}"
+      loop: "{{ acm_certificates.certificateSummaryList | default([]) }}"
+      when: (environment != 'localstack' or not localstack_skip_long_operations) and item.domainName == domain_name and not acm_create_certificate
+      
+    - name: Create ACM certificate if needed
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_acm
+        arguments:
+          action: request_certificate
+          region: "{{ aws_region }}"
+          domainName: "{{ domain_name }}"
+          subjectAlternativeNames:
+            - "*.{{ domain_name }}"
+          validationMethod: "DNS"
+          tags: "{{ aws_tags | combine({'Name': domain_name + '-certificate'}) }}"
+      register: certificate_result
+      when: (environment != 'localstack' or not localstack_skip_long_operations) and (acm_create_certificate or certificate_arn is not defined)
+      
+    - name: Set certificate ARN from creation result
+      set_fact:
+        certificate_arn: "{{ certificate_result.result.certificateArn | default('arn:aws:acm:us-east-1:123456789012:certificate/dummy') }}"
+      when: (environment != 'localstack' or not localstack_skip_long_operations) and (acm_create_certificate or certificate_arn is not defined)
+      
+    - name: Set dummy certificate ARN for LocalStack
+      set_fact:
+        certificate_arn: "arn:aws:acm:us-east-1:123456789012:certificate/dummy"
+      when: environment == 'localstack' and certificate_arn is not defined
+      
+    - name: Get certificate validation records
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_acm
+        arguments:
+          action: describe_certificate
+          region: "{{ aws_region }}"
+          certificateArn: "{{ certificate_arn }}"
+      register: certificate_details
+      when: (environment != 'localstack' or not localstack_skip_long_operations) and acm_validate_certificate
+      
+    - name: Create DNS validation records
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_route53
+        arguments:
+          action: create_record
+          region: "{{ aws_region }}"
+          zoneId: "{{ route53_zone_id }}"
+          recordName: "{{ item.resourceRecord.name }}"
+          recordType: "{{ item.resourceRecord.type }}"
+          recordTtl: 300
+          recordState: "present"
+          recordValue: "{{ item.resourceRecord.value }}"
+      loop: "{{ certificate_details.result.certificate.domainValidationOptions | default([]) }}"
+      when: (environment != 'localstack' or not localstack_skip_long_operations) and acm_validate_certificate and item.resourceRecord is defined
+      
+    - name: Wait for certificate validation
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_acm
+        arguments:
+          action: describe_certificate
+          region: "{{ aws_region }}"
+          certificateArn: "{{ certificate_arn }}"
+      register: certificate_status
+      until: (certificate_status.result.certificate.status == 'ISSUED') or
+             environment == 'localstack'
+      retries: 60
+      delay: 30
+      when: (environment != 'localstack' or not localstack_skip_long_operations) and acm_validate_certificate
+      ignore_errors: "{{ environment == 'localstack' }}"
+      
+    - name: Update HTTPS listener with new certificate
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_elb
+        arguments:
+          action: modify_listener
+          region: "{{ aws_region }}"
+          listenerArn: "{{ https_listener_arn }}"
+          certificates:
+            - certificateArn: "{{ certificate_arn }}"
+      when: (environment != 'localstack' or not localstack_skip_long_operations) and acm_validate_certificate
+      
+    - name: Save DNS and SSL information to file
+      copy:
+        content: |
+          route53_zone_id: {{ route53_zone_id }}
+          certificate_arn: {{ certificate_arn }}
+        dest: "{{ playbook_dir }}/../.dns_ssl_info.yml"
+        mode: '0644'

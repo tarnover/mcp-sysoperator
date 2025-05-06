@@ -1,0 +1,14 @@
+---
+# Web role handlers
+
+- name: Restart Apache
+  service:
+    name: httpd
+    state: restarted
+  when: environment != 'localstack'
+
+- name: Restart PHP-FPM
+  service:
+    name: php-fpm
+    state: restarted
+  when: environment != 'localstack'

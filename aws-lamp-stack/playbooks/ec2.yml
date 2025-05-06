@@ -1,0 +1,329 @@
+---
+# EC2 playbook
+# This playbook sets up the EC2 instances for the web servers
+
+- name: Create EC2 instances for web servers
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Include common variables
+      include_vars:
+        file: "{{ playbook_dir }}/../group_vars/all.yml"
+        
+    - name: Include environment-specific variables
+      include_vars:
+        file: "{{ playbook_dir }}/../group_vars/{{ lookup('env', 'ENVIRONMENT') | default('localstack', true) }}.yml"
+        
+    - name: Load VPC IDs
+      include_vars:
+        file: "{{ playbook_dir }}/../.vpc_ids.yml"
+        
+    - name: Load security group IDs
+      include_vars:
+        file: "{{ playbook_dir }}/../.security_ids.yml"
+        
+    - name: Load EFS IDs
+      include_vars:
+        file: "{{ playbook_dir }}/../.efs_ids.yml"
+      
+    - name: Find latest Amazon Linux 2023 ARM64 AMI
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_ec2
+        arguments:
+          action: describe_images
+          region: "{{ aws_region }}"
+          filters:
+            name: "{{ ec2_ami_name }}"
+            architecture: "arm64"
+            virtualization-type: "hvm"
+            state: "available"
+            root-device-type: "ebs"
+            owner-alias: "amazon"
+      register: ami_result
+      when: environment != 'localstack'
+      
+    - name: Set AMI ID fact
+      set_fact:
+        ec2_ami_id: "{{ ami_result.images | sort(attribute='creationDate', reverse=true) | first | attr('imageId') | default('ami-12345678') }}"
+      when: environment != 'localstack'
+      
+    - name: Set dummy AMI ID for LocalStack
+      set_fact:
+        ec2_ami_id: "ami-12345678"
+      when: environment == 'localstack'
+      
+    - name: Create user data script for web servers
+      set_fact:
+        user_data: |
+          #!/bin/bash
+          # Update system packages
+          dnf update -y
+          
+          # Install Apache, PHP, and other required packages
+          dnf install -y httpd amazon-efs-utils
+          
+          # Install PHP 8.1 and extensions
+          dnf install -y \
+            php8.1 \
+            php8.1-cli \
+            php8.1-fpm \
+            php8.1-mysqlnd \
+            php8.1-zip \
+            php8.1-devel \
+            php8.1-gd \
+            php8.1-mbstring \
+            php8.1-curl \
+            php8.1-xml \
+            php8.1-pear \
+            php8.1-bcmath \
+            php8.1-json
+          
+          # Create directory for EFS mount
+          mkdir -p {{ efs_mount_point }}
+          
+          # Add EFS mount to fstab
+          echo "{{ efs_id }}.efs.{{ aws_region }}.amazonaws.com:/ {{ efs_mount_point }} efs _netdev,tls,iam 0 0" >> /etc/fstab
+          
+          # Mount EFS
+          mount -a
+          
+          # Set permissions for web directory
+          chown -R apache:apache {{ apache_document_root }}
+          chown -R apache:apache {{ efs_mount_point }}
+          
+          # Create a simple health check file
+          cat > {{ apache_document_root }}/health.php << 'EOF'
+          <?php
+          // Health check file
+          header('Content-Type: application/json');
+          
+          $health = [
+              'status' => 'healthy',
+              'timestamp' => time(),
+              'hostname' => gethostname(),
+              'ip' => $_SERVER['SERVER_ADDR']
+          ];
+          
+          // Check if we can connect to the database
+          try {
+              $dbhost = '{{ db_cluster_endpoint }}';
+              $dbname = '{{ db_name }}';
+              $dbuser = '{{ db_username }}';
+              $dbpass = '{{ db_password }}';
+              
+              $conn = new PDO("mysql:host=$dbhost;dbname=$dbname", $dbuser, $dbpass);
+              $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+              $health['database'] = 'connected';
+          } catch(PDOException $e) {
+              $health['database'] = 'error';
+              $health['database_error'] = $e->getMessage();
+          }
+          
+          // Check if EFS is mounted
+          $health['efs'] = file_exists('{{ efs_mount_point }}') && is_writable('{{ efs_mount_point }}') ? 'mounted' : 'error';
+          
+          echo json_encode($health, JSON_PRETTY_PRINT);
+          EOF
+          
+          # Enable and start Apache
+          systemctl enable httpd
+          systemctl start httpd
+          
+          # Tag instance as ready
+          aws ec2 create-tags --region {{ aws_region }} --resources $(curl -s http://169.254.169.254/latest/meta-data/instance-id) --tags Key=Status,Value=Ready
+      
+    - name: Create launch template for web servers
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_ec2
+        arguments:
+          action: create_launch_template
+          region: "{{ aws_region }}"
+          launchTemplateName: "{{ project_name }}-web-launch-template"
+          versionDescription: "Initial version"
+          imageId: "{{ ec2_ami_id }}"
+          instanceType: "{{ ec2_instance_type }}"
+          keyName: "{{ ec2_key_name }}"
+          securityGroupIds:
+            - "{{ web_sg_id }}"
+          userData: "{{ user_data | b64encode }}"
+          iamInstanceProfile:
+            name: "{{ ec2_instance_profile_name }}"
+          blockDeviceMappings:
+            - deviceName: "/dev/xvda"
+              ebs:
+                volumeSize: 20
+                volumeType: "gp3"
+                deleteOnTermination: true
+                encrypted: true
+          tags: "{{ aws_tags | combine({'Name': project_name + '-web-launch-template'}) }}"
+      register: launch_template_result
+      when: environment != 'localstack' or not localstack_skip_long_operations
+      
+    - name: Set launch template ID fact
+      set_fact:
+        launch_template_id: "{{ launch_template_result.result.launchTemplateId | default('lt-dummy') }}"
+        launch_template_version: "{{ launch_template_result.result.latestVersionNumber | default('1') }}"
+      
+    - name: Create auto scaling group for web servers
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_ec2
+        arguments:
+          action: create_auto_scaling_group
+          region: "{{ aws_region }}"
+          autoScalingGroupName: "{{ project_name }}-web-asg"
+          launchTemplate:
+            launchTemplateId: "{{ launch_template_id }}"
+            version: "{{ launch_template_version }}"
+          minSize: "{{ ec2_min_instances }}"
+          maxSize: "{{ ec2_max_instances }}"
+          desiredCapacity: "{{ ec2_desired_instances }}"
+          vpcZoneIdentifier: "{{ private_subnet_1_id }},{{ private_subnet_2_id }}"
+          healthCheckType: "ELB"
+          healthCheckGracePeriod: 300
+          tags:
+            - key: "Name"
+              value: "{{ project_name }}-web-server"
+              propagateAtLaunch: true
+            - key: "Project"
+              value: "{{ project_name }}"
+              propagateAtLaunch: true
+            - key: "Environment"
+              value: "{{ environment }}"
+              propagateAtLaunch: true
+      register: asg_result
+      when: environment != 'localstack' or not localstack_skip_long_operations
+      
+    - name: Set ASG name fact
+      set_fact:
+        asg_name: "{{ asg_result.result.autoScalingGroupName | default(project_name + '-web-asg') }}"
+      
+    - name: Create CPU utilization scaling policy
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_ec2
+        arguments:
+          action: put_scaling_policy
+          region: "{{ aws_region }}"
+          autoScalingGroupName: "{{ asg_name }}"
+          policyName: "{{ project_name }}-cpu-scaling-policy"
+          policyType: "TargetTrackingScaling"
+          targetTrackingConfiguration:
+            predefinedMetricSpecification:
+              predefinedMetricType: "ASGAverageCPUUtilization"
+            targetValue: 70.0
+            scaleOutCooldown: 300
+            scaleInCooldown: 300
+      when: environment != 'localstack' or not localstack_skip_long_operations
+      
+    - name: Create dummy EC2 instances for LocalStack testing
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_ec2
+        arguments:
+          action: create
+          region: "{{ aws_region }}"
+          instanceType: "{{ ec2_instance_type }}"
+          imageId: "{{ ec2_ami_id }}"
+          keyName: "{{ ec2_key_name }}"
+          securityGroupIds:
+            - "{{ web_sg_id }}"
+          subnetId: "{{ private_subnet_1_id }}"
+          count: 1
+          tags:
+            Name: "{{ project_name }}-web-server-1"
+            Project: "{{ project_name }}"
+            Environment: "{{ environment }}"
+      register: ec2_instance_1_result
+      when: environment == 'localstack'
+      
+    - name: Create second dummy EC2 instance for LocalStack testing
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_ec2
+        arguments:
+          action: create
+          region: "{{ aws_region }}"
+          instanceType: "{{ ec2_instance_type }}"
+          imageId: "{{ ec2_ami_id }}"
+          keyName: "{{ ec2_key_name }}"
+          securityGroupIds:
+            - "{{ web_sg_id }}"
+          subnetId: "{{ private_subnet_2_id }}"
+          count: 1
+          tags:
+            Name: "{{ project_name }}-web-server-2"
+            Project: "{{ project_name }}"
+            Environment: "{{ environment }}"
+      register: ec2_instance_2_result
+      when: environment == 'localstack'
+      
+    - name: Set EC2 instance IDs and IPs for LocalStack
+      set_fact:
+        web1_instance_id: "{{ ec2_instance_1_result.instances[0].instanceId | default('i-dummy1') }}"
+        web1_private_ip: "{{ ec2_instance_1_result.instances[0].privateIpAddress | default('10.0.3.10') }}"
+        web1_public_ip: "{{ ec2_instance_1_result.instances[0].publicIpAddress | default('127.0.0.1') }}"
+        web2_instance_id: "{{ ec2_instance_2_result.instances[0].instanceId | default('i-dummy2') }}"
+        web2_private_ip: "{{ ec2_instance_2_result.instances[0].privateIpAddress | default('10.0.4.10') }}"
+        web2_public_ip: "{{ ec2_instance_2_result.instances[0].publicIpAddress | default('127.0.0.1') }}"
+      when: environment == 'localstack'
+      
+    - name: Wait for instances to be running in ASG
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_ec2
+        arguments:
+          action: describe_auto_scaling_groups
+          region: "{{ aws_region }}"
+          autoScalingGroupNames:
+            - "{{ asg_name }}"
+      register: asg_status
+      until: (asg_status.result.autoScalingGroups | default([]) | length > 0 and 
+              asg_status.result.autoScalingGroups[0].instances | default([]) | length >= ec2_desired_instances) or
+             environment == 'localstack'
+      retries: 30
+      delay: 10
+      when: environment != 'localstack' or not localstack_skip_long_operations
+      ignore_errors: "{{ environment == 'localstack' }}"
+      
+    - name: Get EC2 instance IDs from ASG
+      set_fact:
+        web_instance_ids: "{{ asg_status.result.autoScalingGroups[0].instances | default([]) | map(attribute='instanceId') | list }}"
+      when: environment != 'localstack' or not localstack_skip_long_operations
+      
+    - name: Get EC2 instance details
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_ec2
+        arguments:
+          action: describe_instances
+          region: "{{ aws_region }}"
+          instanceIds: "{{ web_instance_ids }}"
+      register: ec2_instances
+      when: environment != 'localstack' or not localstack_skip_long_operations
+      
+    - name: Set EC2 instance IPs
+      set_fact:
+        web1_instance_id: "{{ web_instance_ids[0] | default('i-dummy1') }}"
+        web1_private_ip: "{{ ec2_instances.reservations[0].instances[0].privateIpAddress | default('10.0.3.10') }}"
+        web1_public_ip: "{{ ec2_instances.reservations[0].instances[0].publicIpAddress | default('127.0.0.1') }}"
+        web2_instance_id: "{{ web_instance_ids[1] | default('i-dummy2') }}"
+        web2_private_ip: "{{ ec2_instances.reservations[1].instances[0].privateIpAddress | default('10.0.4.10') }}"
+        web2_public_ip: "{{ ec2_instances.reservations[1].instances[0].publicIpAddress | default('127.0.0.1') }}"
+      when: environment != 'localstack' or not localstack_skip_long_operations and web_instance_ids | length >= 2
+      
+    - name: Save EC2 instance information to file
+      copy:
+        content: |
+          web1_instance_id: {{ web1_instance_id }}
+          web1_private_ip: {{ web1_private_ip }}
+          web1_public_ip: {{ web1_public_ip }}
+          web2_instance_id: {{ web2_instance_id }}
+          web2_private_ip: {{ web2_private_ip }}
+          web2_public_ip: {{ web2_public_ip }}
+          asg_name: {{ asg_name }}
+          launch_template_id: {{ launch_template_id }}
+        dest: "{{ playbook_dir }}/../.ec2_info.yml"
+        mode: '0644'

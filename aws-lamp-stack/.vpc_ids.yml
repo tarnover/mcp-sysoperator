@@ -1,0 +1,7 @@
+vpc_id: vpc-12345678
+public_subnet_1_id: subnet-pub1
+public_subnet_2_id: subnet-pub2
+private_subnet_1_id: subnet-priv1
+private_subnet_2_id: subnet-priv2
+private_subnet_3_id: subnet-priv3
+private_subnet_4_id: subnet-priv4

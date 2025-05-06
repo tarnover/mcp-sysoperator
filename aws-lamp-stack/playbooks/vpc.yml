@@ -1,0 +1,341 @@
+---
+# VPC and networking playbook
+# This playbook sets up the VPC, subnets, internet gateway, NAT gateways, and route tables
+
+- name: Create VPC and networking infrastructure
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Include common variables
+      include_vars:
+        file: "{{ playbook_dir }}/../group_vars/all.yml"
+        
+    - name: Include environment-specific variables
+      include_vars:
+        file: "{{ playbook_dir }}/../group_vars/{{ lookup('env', 'ENVIRONMENT') | default('localstack', true) }}.yml"
+        
+    - name: Create VPC
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: create
+          region: "{{ aws_region }}"
+          cidrBlock: "{{ vpc_cidr }}"
+          name: "{{ project_name }}-vpc"
+          dnsSupport: true
+          dnsHostnames: true
+          tags: "{{ aws_tags | combine({'Name': project_name + '-vpc'}) }}"
+      register: vpc_result
+      
+    - name: Set VPC ID fact
+      set_fact:
+        vpc_id: "{{ vpc_result.result.vpcId }}"
+        
+    - name: Create Internet Gateway
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: create_internet_gateway
+          region: "{{ aws_region }}"
+          vpcId: "{{ vpc_id }}"
+          tags: "{{ aws_tags | combine({'Name': project_name + '-igw'}) }}"
+      register: igw_result
+      
+    - name: Set Internet Gateway ID fact
+      set_fact:
+        igw_id: "{{ igw_result.result.internetGatewayId | default('igw-dummy') }}"
+        
+    - name: Create public subnet 1 (AZ1)
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: create_subnet
+          region: "{{ aws_region }}"
+          vpcId: "{{ vpc_id }}"
+          cidrBlock: "{{ public_subnet_1_cidr }}"
+          availabilityZone: "{{ aws_region }}a"
+          mapPublicIpOnLaunch: true
+          tags: "{{ aws_tags | combine({'Name': project_name + '-public-subnet-1'}) }}"
+      register: public_subnet_1_result
+      
+    - name: Set public subnet 1 ID fact
+      set_fact:
+        public_subnet_1_id: "{{ public_subnet_1_result.result.subnetId | default('subnet-pub1') }}"
+        
+    - name: Create public subnet 2 (AZ2)
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: create_subnet
+          region: "{{ aws_region }}"
+          vpcId: "{{ vpc_id }}"
+          cidrBlock: "{{ public_subnet_2_cidr }}"
+          availabilityZone: "{{ aws_region }}b"
+          mapPublicIpOnLaunch: true
+          tags: "{{ aws_tags | combine({'Name': project_name + '-public-subnet-2'}) }}"
+      register: public_subnet_2_result
+      
+    - name: Set public subnet 2 ID fact
+      set_fact:
+        public_subnet_2_id: "{{ public_subnet_2_result.result.subnetId | default('subnet-pub2') }}"
+        
+    - name: Create private subnet 1 (AZ1 - Web)
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: create_subnet
+          region: "{{ aws_region }}"
+          vpcId: "{{ vpc_id }}"
+          cidrBlock: "{{ private_subnet_1_cidr }}"
+          availabilityZone: "{{ aws_region }}a"
+          mapPublicIpOnLaunch: false
+          tags: "{{ aws_tags | combine({'Name': project_name + '-private-subnet-1-web'}) }}"
+      register: private_subnet_1_result
+      
+    - name: Set private subnet 1 ID fact
+      set_fact:
+        private_subnet_1_id: "{{ private_subnet_1_result.result.subnetId | default('subnet-priv1') }}"
+        
+    - name: Create private subnet 2 (AZ2 - Web)
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: create_subnet
+          region: "{{ aws_region }}"
+          vpcId: "{{ vpc_id }}"
+          cidrBlock: "{{ private_subnet_2_cidr }}"
+          availabilityZone: "{{ aws_region }}b"
+          mapPublicIpOnLaunch: false
+          tags: "{{ aws_tags | combine({'Name': project_name + '-private-subnet-2-web'}) }}"
+      register: private_subnet_2_result
+      
+    - name: Set private subnet 2 ID fact
+      set_fact:
+        private_subnet_2_id: "{{ private_subnet_2_result.result.subnetId | default('subnet-priv2') }}"
+        
+    - name: Create private subnet 3 (AZ1 - DB)
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: create_subnet
+          region: "{{ aws_region }}"
+          vpcId: "{{ vpc_id }}"
+          cidrBlock: "{{ private_subnet_3_cidr }}"
+          availabilityZone: "{{ aws_region }}a"
+          mapPublicIpOnLaunch: false
+          tags: "{{ aws_tags | combine({'Name': project_name + '-private-subnet-3-db'}) }}"
+      register: private_subnet_3_result
+      
+    - name: Set private subnet 3 ID fact
+      set_fact:
+        private_subnet_3_id: "{{ private_subnet_3_result.result.subnetId | default('subnet-priv3') }}"
+        
+    - name: Create private subnet 4 (AZ2 - DB)
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: create_subnet
+          region: "{{ aws_region }}"
+          vpcId: "{{ vpc_id }}"
+          cidrBlock: "{{ private_subnet_4_cidr }}"
+          availabilityZone: "{{ aws_region }}b"
+          mapPublicIpOnLaunch: false
+          tags: "{{ aws_tags | combine({'Name': project_name + '-private-subnet-4-db'}) }}"
+      register: private_subnet_4_result
+      
+    - name: Set private subnet 4 ID fact
+      set_fact:
+        private_subnet_4_id: "{{ private_subnet_4_result.result.subnetId | default('subnet-priv4') }}"
+        
+    - name: Create NAT Gateway 1 (AZ1)
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: create_nat_gateway
+          region: "{{ aws_region }}"
+          subnetId: "{{ public_subnet_1_id }}"
+          tags: "{{ aws_tags | combine({'Name': project_name + '-nat-gateway-1'}) }}"
+      register: nat_gateway_1_result
+      when: environment != 'localstack' or not localstack_skip_long_operations
+      
+    - name: Set NAT Gateway 1 ID fact
+      set_fact:
+        nat_gateway_1_id: "{{ nat_gateway_1_result.result.natGatewayId | default('nat-dummy1') }}"
+      
+    - name: Create NAT Gateway 2 (AZ2)
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: create_nat_gateway
+          region: "{{ aws_region }}"
+          subnetId: "{{ public_subnet_2_id }}"
+          tags: "{{ aws_tags | combine({'Name': project_name + '-nat-gateway-2'}) }}"
+      register: nat_gateway_2_result
+      when: environment != 'localstack' or not localstack_skip_long_operations
+      
+    - name: Set NAT Gateway 2 ID fact
+      set_fact:
+        nat_gateway_2_id: "{{ nat_gateway_2_result.result.natGatewayId | default('nat-dummy2') }}"
+      
+    - name: Create public route table
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: create_route_table
+          region: "{{ aws_region }}"
+          vpcId: "{{ vpc_id }}"
+          tags: "{{ aws_tags | combine({'Name': project_name + '-public-rtb'}) }}"
+      register: public_route_table_result
+      
+    - name: Set public route table ID fact
+      set_fact:
+        public_route_table_id: "{{ public_route_table_result.result.routeTableId | default('rtb-public') }}"
+        
+    - name: Create route to Internet Gateway in public route table
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: create_route
+          region: "{{ aws_region }}"
+          routeTableId: "{{ public_route_table_id }}"
+          destinationCidrBlock: "0.0.0.0/0"
+          gatewayId: "{{ igw_id }}"
+      
+    - name: Associate public subnet 1 with public route table
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: associate_route_table
+          region: "{{ aws_region }}"
+          routeTableId: "{{ public_route_table_id }}"
+          subnetId: "{{ public_subnet_1_id }}"
+      
+    - name: Associate public subnet 2 with public route table
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: associate_route_table
+          region: "{{ aws_region }}"
+          routeTableId: "{{ public_route_table_id }}"
+          subnetId: "{{ public_subnet_2_id }}"
+      
+    - name: Create private route table 1 (AZ1)
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: create_route_table
+          region: "{{ aws_region }}"
+          vpcId: "{{ vpc_id }}"
+          tags: "{{ aws_tags | combine({'Name': project_name + '-private-rtb-1'}) }}"
+      register: private_route_table_1_result
+      
+    - name: Set private route table 1 ID fact
+      set_fact:
+        private_route_table_1_id: "{{ private_route_table_1_result.result.routeTableId | default('rtb-private1') }}"
+        
+    - name: Create route to NAT Gateway 1 in private route table 1
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: create_route
+          region: "{{ aws_region }}"
+          routeTableId: "{{ private_route_table_1_id }}"
+          destinationCidrBlock: "0.0.0.0/0"
+          natGatewayId: "{{ nat_gateway_1_id }}"
+      when: environment != 'localstack' or not localstack_skip_long_operations
+      
+    - name: Associate private subnet 1 with private route table 1
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: associate_route_table
+          region: "{{ aws_region }}"
+          routeTableId: "{{ private_route_table_1_id }}"
+          subnetId: "{{ private_subnet_1_id }}"
+      
+    - name: Associate private subnet 3 with private route table 1
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: associate_route_table
+          region: "{{ aws_region }}"
+          routeTableId: "{{ private_route_table_1_id }}"
+          subnetId: "{{ private_subnet_3_id }}"
+      
+    - name: Create private route table 2 (AZ2)
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: create_route_table
+          region: "{{ aws_region }}"
+          vpcId: "{{ vpc_id }}"
+          tags: "{{ aws_tags | combine({'Name': project_name + '-private-rtb-2'}) }}"
+      register: private_route_table_2_result
+      
+    - name: Set private route table 2 ID fact
+      set_fact:
+        private_route_table_2_id: "{{ private_route_table_2_result.result.routeTableId | default('rtb-private2') }}"
+        
+    - name: Create route to NAT Gateway 2 in private route table 2
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: create_route
+          region: "{{ aws_region }}"
+          routeTableId: "{{ private_route_table_2_id }}"
+          destinationCidrBlock: "0.0.0.0/0"
+          natGatewayId: "{{ nat_gateway_2_id }}"
+      when: environment != 'localstack' or not localstack_skip_long_operations
+      
+    - name: Associate private subnet 2 with private route table 2
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: associate_route_table
+          region: "{{ aws_region }}"
+          routeTableId: "{{ private_route_table_2_id }}"
+          subnetId: "{{ private_subnet_2_id }}"
+      
+    - name: Associate private subnet 4 with private route table 2
+      use_mcp_tool:
+        server_name: ansible
+        tool_name: aws_vpc
+        arguments:
+          action: associate_route_table
+          region: "{{ aws_region }}"
+          routeTableId: "{{ private_route_table_2_id }}"
+          subnetId: "{{ private_subnet_4_id }}"
+      
+    - name: Save VPC and subnet IDs to file
+      copy:
+        content: |
+          vpc_id: {{ vpc_id }}
+          public_subnet_1_id: {{ public_subnet_1_id }}
+          public_subnet_2_id: {{ public_subnet_2_id }}
+          private_subnet_1_id: {{ private_subnet_1_id }}
+          private_subnet_2_id: {{ private_subnet_2_id }}
+          private_subnet_3_id: {{ private_subnet_3_id }}
+          private_subnet_4_id: {{ private_subnet_4_id }}
+        dest: "{{ playbook_dir }}/../.vpc_ids.yml"
+        mode: '0644'

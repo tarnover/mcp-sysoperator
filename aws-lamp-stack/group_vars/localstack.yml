@@ -1,0 +1,52 @@
+---
+# LocalStack-specific variables
+
+# AWS CLI command for LocalStack
+aws_cli_command: "awslocal"
+
+# AWS credentials (not needed for LocalStack)
+aws_profile: ""
+
+# AWS region (override from all.yml if needed)
+aws_region: "us-east-1"
+
+# LocalStack endpoint
+localstack_endpoint: "http://localhost:4566"
+
+# EC2 configuration - simplified for LocalStack
+ec2_instance_type: "t2.micro"  # Instance type doesn't matter in LocalStack
+ec2_ami_id: "ami-12345678"     # Dummy AMI ID for LocalStack
+ec2_key_name: "dummy-key"      # Dummy key name for LocalStack
+
+# RDS configuration - simplified for LocalStack
+db_instance_class: "db.t2.micro"  # Instance class doesn't matter in LocalStack
+db_multi_az: false                # Multi-AZ not fully supported in LocalStack
+
+# Route 53 configuration
+route53_create_zone: true
+route53_zone_id: ""  # Will be populated during creation
+
+# ACM configuration
+acm_create_certificate: true
+acm_validate_certificate: false  # Skip validation in LocalStack
+
+# CloudWatch configuration
+cloudwatch_create_alarms: false  # Skip CloudWatch alarms in LocalStack
+
+# Backup configuration
+backup_enabled: false  # Skip backups in LocalStack
+
+# Security configuration
+security_enable_waf: false  # Skip WAF in LocalStack
+security_enable_shield: false  # Skip Shield in LocalStack
+
+# Tagging strategy
+aws_tags:
+  Project: "LAMP Stack"
+  Environment: "localstack"
+  ManagedBy: "Ansible"
+  Owner: "DevOps Team"
+  
+# LocalStack testing
+localstack_test_mode: true
+localstack_skip_long_operations: true

@@ -1,0 +1,52 @@
+---
+# AWS-specific variables
+
+# AWS CLI command
+aws_cli_command: "aws"
+
+# AWS credentials
+aws_profile: "default"
+
+# AWS region (override from all.yml if needed)
+aws_region: "us-east-1"
+
+# EC2 configuration
+ec2_instance_type: "t4g.small"
+ec2_ami_owner: "amazon"
+ec2_ami_name: "al2023-ami-*-arm64"
+
+# RDS configuration
+db_instance_class: "db.t4g.small"
+db_multi_az: true
+
+# Route 53 configuration
+route53_create_zone: false  # Set to true if you need to create the zone
+route53_zone_id: "{{ lookup('env', 'ROUTE53_ZONE_ID') }}"
+
+# ACM configuration
+acm_create_certificate: true
+acm_validate_certificate: true
+
+# CloudWatch configuration
+cloudwatch_create_alarms: true
+cloudwatch_alarm_email: "admin@testerlab.com"
+
+# Backup configuration
+backup_enabled: true
+backup_retention_days: 7
+
+# Cost optimization
+use_spot_instances: false  # Set to true to use spot instances for non-critical workloads
+reserved_instances: false  # Set to true if you have reserved instances
+
+# Security configuration
+security_enable_waf: true
+security_enable_shield: false  # AWS Shield Advanced is expensive, disabled by default
+
+# Tagging strategy
+aws_tags:
+  Project: "LAMP Stack"
+  Environment: "{{ environment }}"
+  ManagedBy: "Ansible"
+  Owner: "DevOps Team"
+  CostCenter: "IT-123"
