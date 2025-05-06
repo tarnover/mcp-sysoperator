@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://www.tarnover.com/assets/images/logo.png" alt="SysOperator" width="500">
+</p>
+
 # MCP SysOperator
 
 A Model Context Protocol (MCP) server for Infrastructure as Code operations. This server allows AI assistants to interact with Ansible and Terraform, execute playbooks and Terraform plans, manage cloud resources, and perform other infrastructure operations directly.
