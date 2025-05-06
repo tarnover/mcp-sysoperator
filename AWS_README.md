@@ -1,6 +1,6 @@
-# Using Ansible MCP Server with AWS
+# Using SysOperator MCP Server with AWS
 
-This guide demonstrates how to use the Ansible MCP server with AWS. The examples provided show various AWS operations that can be performed using Ansible.
+This guide demonstrates how to use the SysOperator MCP server with AWS. The examples provided show various AWS operations that can be performed using Ansible.
 
 ## Prerequisites
 
@@ -24,7 +24,7 @@ This repository includes several example files for working with AWS:
 
 ## Using the MCP Server with AWS
 
-The Ansible MCP server provides several tools for working with AWS:
+The SysOperator MCP server provides several tools for working with AWS:
 
 ### 1. aws_ec2: Manage AWS EC2 instances
 
@@ -118,7 +118,7 @@ The Ansible MCP server provides several tools for working with AWS:
 
 ## Running the Example Playbooks
 
-You can run the example playbooks using the Ansible MCP server:
+You can run the example playbooks using the SysOperator MCP server:
 
 ```
 <use_mcp_tool>
@@ -135,7 +135,7 @@ You can run the example playbooks using the Ansible MCP server:
 
 ## Using Dynamic Inventory
 
-To use the AWS dynamic inventory with the Ansible MCP server:
+To use the AWS dynamic inventory with the SysOperator MCP server:
 
 1. Ensure the `aws_inventory.yml` file is properly configured
 2. Use it with the `run_playbook` tool:
