@@ -1,0 +1,108 @@
+---
+# Sample Ansible playbook for LocalStack
+# This playbook demonstrates how to use LocalStack with Ansible
+
+- name: LocalStack AWS Operations
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Check if LocalStack is running
+      shell: awslocal s3 ls
+      register: localstack_check
+      ignore_errors: true
+
+    - name: Fail if LocalStack is not running
+      fail:
+        msg: "LocalStack is not running. Please start LocalStack with 'localstack start'."
+      when: localstack_check.rc != 0
+
+    - name: List S3 buckets
+      shell: awslocal s3 ls
+      register: s3_buckets
+      
+    - name: Display S3 buckets
+      debug:
+        var: s3_buckets.stdout_lines
+        
+    - name: Create a new S3 bucket
+      shell: awslocal s3 mb s3://ansible-localstack-bucket
+      register: create_bucket
+      ignore_errors: yes
+      
+    - name: Display bucket creation result
+      debug:
+        var: create_bucket
+        
+    - name: Create a test file
+      copy:
+        dest: /tmp/localstack-test.txt
+        content: |
+          This is a test file for LocalStack S3 upload.
+          Created by Ansible playbook.
+      
+    - name: Upload file to S3
+      shell: awslocal s3 cp /tmp/localstack-test.txt s3://ansible-localstack-bucket/test.txt
+      register: upload_file
+      
+    - name: Display upload result
+      debug:
+        var: upload_file
+        
+    - name: List objects in the bucket
+      shell: awslocal s3 ls s3://ansible-localstack-bucket
+      register: list_objects
+      
+    - name: Display objects
+      debug:
+        var: list_objects.stdout_lines
+        
+    - name: Create CloudFormation stack
+      block:
+        - name: Create CloudFormation template file
+          copy:
+            dest: /tmp/cloudformation-template.json
+            content: |
+              {
+                "Resources": {
+                  "MyBucket": {
+                    "Type": "AWS::S3::Bucket",
+                    "Properties": {
+                      "BucketName": "cf-created-bucket"
+                    }
+                  }
+                }
+              }
+              
+        - name: Deploy CloudFormation stack
+          shell: awslocal cloudformation create-stack --stack-name ansible-test-stack --template-body file:///tmp/cloudformation-template.json
+          register: cf_result
+          
+        - name: Display CloudFormation result
+          debug:
+            var: cf_result
+      rescue:
+        - name: Display CloudFormation error
+          debug:
+            msg: "CloudFormation operation failed. This might be because the stack already exists or CloudFormation is not fully supported in your LocalStack setup."
+            
+    - name: List EC2 instances
+      shell: awslocal ec2 describe-instances
+      register: ec2_instances
+      
+    - name: Display EC2 instances
+      debug:
+        var: ec2_instances.stdout
+        
+    - name: Clean up
+      block:
+        - name: Remove test file
+          file:
+            path: /tmp/localstack-test.txt
+            state: absent
+            
+        - name: Remove CloudFormation template
+          file:
+            path: /tmp/cloudformation-template.json
+            state: absent
+      ignore_errors: yes
