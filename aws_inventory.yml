@@ -1,0 +1,52 @@
+---
+# AWS Dynamic Inventory for Ansible
+# This file configures Ansible to use AWS as a dynamic inventory source
+
+plugin: aws_ec2
+regions:
+  - us-west-2  # Change to your preferred region
+keyed_groups:
+  # Create groups based on instance tags
+  - prefix: tag
+    key: tags.Name
+  # Create groups based on instance type
+  - prefix: instance_type
+    key: instance_type
+  # Create groups based on VPC
+  - prefix: vpc
+    key: vpc_id
+  # Create groups based on security groups
+  - prefix: security_group
+    key: security_groups
+  # Create groups based on availability zone
+  - prefix: az
+    key: placement.availability_zone
+  # Create groups based on state
+  - prefix: instance_state
+    key: instance_state.name
+
+# Configure which hostnames to use
+hostnames:
+  - tag:Name
+  - public_ip_address
+  - private_ip_address
+  - instance_id
+
+# Add custom host variables
+compose:
+  # Set ansible_host to the public IP if available, otherwise private IP
+  ansible_host: public_ip_address | default(private_ip_address)
+  # Add other instance attributes as host variables
+  instance_id: instance_id
+  instance_type: instance_type
+  region: placement.region
+  availability_zone: placement.availability_zone
+  state: instance_state.name
+  platform: platform | default('linux')
+  private_ip: private_ip_address
+  public_ip: public_ip_address
+
+# Filter instances (optional)
+# filters:
+#   instance-state-name: running
+#   tag:Environment: production

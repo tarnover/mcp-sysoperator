@@ -1,0 +1,168 @@
+---
+# Example Ansible playbook for AWS operations
+# Note: This playbook requires valid AWS credentials to run
+
+- name: AWS Operations Example
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aws_region: us-west-2
+    instance_type: t2.micro
+    ami_id: ami-0c55b159cbfafe1f0  # Amazon Linux 2 AMI (adjust for your region)
+    vpc_id: vpc-example
+    key_name: my-key-pair
+    security_group: my-security-group
+    instance_name: example-instance
+    bucket_name: example-bucket-{{ ansible_date_time.epoch }}
+
+  tasks:
+    - name: Get information about AWS regions
+      amazon.aws.aws_region_info:
+      register: aws_regions
+      tags:
+        - info
+
+    - name: Display AWS regions
+      debug:
+        var: aws_regions
+      tags:
+        - info
+
+    - name: Get information about EC2 instances
+      amazon.aws.ec2_instance_info:
+        region: "{{ aws_region }}"
+      register: ec2_instances
+      tags:
+        - ec2
+        - info
+
+    - name: Display EC2 instances
+      debug:
+        var: ec2_instances
+      tags:
+        - ec2
+        - info
+
+    - name: Create a security group
+      amazon.aws.ec2_security_group:
+        name: "{{ security_group }}"
+        description: Security group for example instances
+        vpc_id: "{{ vpc_id }}"
+        region: "{{ aws_region }}"
+        rules:
+          - proto: tcp
+            ports: 22
+            cidr_ip: 0.0.0.0/0
+            rule_desc: Allow SSH
+          - proto: tcp
+            ports: 80
+            cidr_ip: 0.0.0.0/0
+            rule_desc: Allow HTTP
+      register: security_group_result
+      tags:
+        - ec2
+        - create
+
+    - name: Launch EC2 instance
+      amazon.aws.ec2_instance:
+        name: "{{ instance_name }}"
+        key_name: "{{ key_name }}"
+        security_group: "{{ security_group }}"
+        instance_type: "{{ instance_type }}"
+        image_id: "{{ ami_id }}"
+        region: "{{ aws_region }}"
+        wait: yes
+        network:
+          assign_public_ip: yes
+        tags:
+          Name: "{{ instance_name }}"
+          Environment: Development
+      register: ec2_result
+      tags:
+        - ec2
+        - create
+
+    - name: Create S3 bucket
+      amazon.aws.s3_bucket:
+        name: "{{ bucket_name }}"
+        region: "{{ aws_region }}"
+        tags:
+          Name: "{{ bucket_name }}"
+          Environment: Development
+      register: s3_result
+      tags:
+        - s3
+        - create
+
+    - name: Upload file to S3 bucket
+      amazon.aws.s3_object:
+        bucket: "{{ bucket_name }}"
+        object: example.txt
+        content: "This is an example file uploaded by Ansible"
+        mode: put
+        region: "{{ aws_region }}"
+      when: s3_result.changed
+      tags:
+        - s3
+        - create
+
+    - name: Get RDS instances
+      community.aws.rds_instance_info:
+        region: "{{ aws_region }}"
+      register: rds_instances
+      tags:
+        - rds
+        - info
+
+    - name: Display RDS instances
+      debug:
+        var: rds_instances
+      tags:
+        - rds
+        - info
+
+    - name: Get VPC information
+      amazon.aws.ec2_vpc_net_info:
+        region: "{{ aws_region }}"
+      register: vpc_info
+      tags:
+        - vpc
+        - info
+
+    - name: Display VPC information
+      debug:
+        var: vpc_info
+      tags:
+        - vpc
+        - info
+
+    - name: Get Route53 zones
+      community.aws.route53_info:
+        region: "{{ aws_region }}"
+      register: route53_zones
+      tags:
+        - route53
+        - info
+
+    - name: Display Route53 zones
+      debug:
+        var: route53_zones
+      tags:
+        - route53
+        - info
+
+    - name: Get Lambda functions
+      community.aws.lambda_info:
+        region: "{{ aws_region }}"
+      register: lambda_functions
+      tags:
+        - lambda
+        - info
+
+    - name: Display Lambda functions
+      debug:
+        var: lambda_functions
+      tags:
+        - lambda
+        - info

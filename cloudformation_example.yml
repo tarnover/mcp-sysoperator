@@ -1,0 +1,64 @@
+---
+# Example Ansible playbook for AWS CloudFormation
+# Note: This playbook requires valid AWS credentials to run
+
+- name: AWS CloudFormation Example
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aws_region: us-west-2
+    stack_name: example-stack
+    template_file: cloudformation_template.json
+
+  tasks:
+    - name: Create CloudFormation stack
+      amazon.aws.cloudformation:
+        stack_name: "{{ stack_name }}"
+        state: present
+        region: "{{ aws_region }}"
+        template_body: "{{ lookup('file', template_file) }}"
+        template_parameters:
+          KeyName: my-key-pair
+          InstanceType: t2.micro
+        tags:
+          Stack: "{{ stack_name }}"
+          Environment: Development
+      register: cf_result
+      tags:
+        - create
+
+    - name: Display CloudFormation stack result
+      debug:
+        var: cf_result
+      tags:
+        - create
+
+    - name: Get CloudFormation stack information
+      amazon.aws.cloudformation_info:
+        stack_name: "{{ stack_name }}"
+        region: "{{ aws_region }}"
+      register: cf_info
+      tags:
+        - info
+
+    - name: Display CloudFormation stack information
+      debug:
+        var: cf_info
+      tags:
+        - info
+
+    - name: Delete CloudFormation stack
+      amazon.aws.cloudformation:
+        stack_name: "{{ stack_name }}"
+        state: absent
+        region: "{{ aws_region }}"
+      register: cf_delete
+      tags:
+        - delete
+
+    - name: Display CloudFormation stack deletion result
+      debug:
+        var: cf_delete
+      tags:
+        - delete
