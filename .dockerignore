@@ -1,0 +1,41 @@
+# Version control
+.git
+.gitignore
+
+# Node.js
+node_modules
+npm-debug.log
+
+# Build artifacts
+build
+
+# Docker files
+Dockerfile
+docker-compose.yml
+docker-README.md
+docker-build-run.sh
+.dockerignore
+
+# AWS example files
+aws_example.yml
+aws_inventory.yml
+cloudformation_example.yml
+cloudformation_template.json
+
+# AWS LAMP stack example
+aws-lamp-stack/
+
+# AWS Terraform LAMP example
+aws-terraform-lamp/
+
+# Examples
+examples/
+
+# LocalStack
+localstack/
+
+# Misc
+.DS_Store
+*.log
+*.swp
+*.swo

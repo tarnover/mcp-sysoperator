@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  sysoperator-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: sysoperator-mcp
+    stdin_open: true  # Equivalent to -i in docker run
+    tty: false        # We don't need a TTY for the MCP server
+    volumes:
+      # Uncomment and modify these volume mounts as needed
+      # - ./playbooks:/playbooks
+      # - ~/.aws:/root/.aws
+      # - ./terraform:/terraform
+    # environment:
+      # Uncomment and set these environment variables as needed
+      # - AWS_ACCESS_KEY_ID=your_key
+      # - AWS_SECRET_ACCESS_KEY=your_secret
+      # - AWS_DEFAULT_REGION=us-west-2
