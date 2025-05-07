@@ -4,6 +4,108 @@ A secure, scalable, and highly available LAMP (Linux, Apache, MySQL, PHP) stack 
 
 ## Architecture
 
+```mermaid
+graph TB
+    %% Main components
+    Client((Client)) --> Route53
+    Route53[Route53 DNS] --> WAF
+    WAF[AWS WAF] --> ALB
+    ALB[Application Load Balancer] --> ASG
+    
+    %% Auto Scaling Group and EC2
+    subgraph "Compute"
+        ASG[Auto Scaling Group]
+        ASG --> EC2_1[EC2 Instance 1]
+        ASG --> EC2_2[EC2 Instance 2]
+        ASG --> EC2_N[EC2 Instance N...]
+    end
+    
+    %% Shared Resources
+    EC2_1 --> EFS
+    EC2_2 --> EFS
+    EC2_N --> EFS
+    EFS[Amazon EFS\nShared Storage]
+    
+    EC2_1 --> RDS
+    EC2_2 --> RDS
+    EC2_N --> RDS
+    
+    %% Database
+    subgraph "Database"
+        RDS[Amazon RDS MySQL\nMulti-AZ]
+    end
+    
+    %% Networking
+    subgraph "VPC"
+        subgraph "Public Subnets"
+            IGW[Internet Gateway]
+            NAT[NAT Gateway]
+            ALB
+        end
+        
+        subgraph "Private Subnets"
+            EC2_1
+            EC2_2
+            EC2_N
+            EFS
+        end
+        
+        subgraph "Database Subnets"
+            RDS
+        end
+    end
+    
+    %% Security
+    SG_ALB[Security Group\nALB]
+    SG_WEB[Security Group\nWeb Servers]
+    SG_EFS[Security Group\nEFS]
+    SG_DB[Security Group\nDatabase]
+    
+    ALB --> SG_ALB
+    EC2_1 --> SG_WEB
+    EC2_2 --> SG_WEB
+    EC2_N --> SG_WEB
+    EFS --> SG_EFS
+    RDS --> SG_DB
+    
+    %% Monitoring & Management
+    subgraph "Monitoring"
+        CW[CloudWatch]
+        CT[CloudTrail]
+        LOGS[CloudWatch Logs]
+        ALARMS[CloudWatch Alarms]
+    end
+    
+    EC2_1 -.-> CW
+    EC2_2 -.-> CW
+    EC2_N -.-> CW
+    RDS -.-> CW
+    ALB -.-> CW
+    EFS -.-> CW
+    
+    %% IAM & Permissions
+    IAM[IAM Roles\nand Profiles]
+    EC2_1 -.-> IAM
+    EC2_2 -.-> IAM
+    EC2_N -.-> IAM
+
+    %% Traffic Flow
+    Client --> Internet((Internet))
+    Internet --> Route53
+    
+    %% Terraform Modules
+    classDef module fill:#ddf,stroke:#33a,stroke-width:2px
+    class Client,Internet none
+    
+    style VPC fill:#e4f5f7,stroke:#099,stroke-width:1px
+    style "Public Subnets" fill:#c9ebef,stroke:#099,stroke-dasharray: 5 5
+    style "Private Subnets" fill:#c9ebef,stroke:#099,stroke-dasharray: 5 5
+    style "Database Subnets" fill:#c9ebef,stroke:#099,stroke-dasharray: 5 5
+    style "Compute" fill:#f4e8d9,stroke:#d67b00,stroke-width:1px
+    style "Database" fill:#e6d6e8,stroke:#9a3ca0,stroke-width:1px
+    style "Monitoring" fill:#d7e8d5,stroke:#38761d,stroke-width:1px
+```
+
 This project implements a complete LAMP stack with the following components:
 
 ### Core Components
