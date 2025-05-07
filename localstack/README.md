@@ -1,6 +1,6 @@
-# LocalStack Integration for MCP Ansible Server
+# LocalStack Integration for MCP SysOperator Server
 
-This directory contains scripts and utilities for integrating the MCP Ansible server with LocalStack, allowing you to test AWS operations locally without real AWS credentials.
+This directory contains scripts and utilities for integrating the MCP SysOperator server with LocalStack, allowing you to test AWS operations locally without real AWS credentials.
 
 ## Overview
 
@@ -8,7 +8,7 @@ LocalStack is a cloud service emulator that runs in a single container on your l
 
 This integration enables you to:
 
-1. Test Ansible playbooks that use AWS services locally
+1. Test IaC that use AWS services locally
 2. Develop and test AWS operations without incurring AWS costs
 3. Run tests without requiring real AWS credentials
 4. Validate your infrastructure code before deploying to real AWS
@@ -56,7 +56,7 @@ node localstack/localstack_aws_operations.mjs
 node localstack/test_mcp_with_localstack.mjs
 ```
 
-### Modifying the MCP Ansible Server for LocalStack
+### Modifying the MCP SysOperator Server for LocalStack
 
 To modify the MCP Ansible server to use LocalStack instead of real AWS:
 
@@ -93,12 +93,12 @@ The following AWS services have been tested with this integration:
 
 ## Implementation Strategy
 
-For a complete integration of the MCP Ansible server with LocalStack:
+For a complete integration of the MCP SysOperator server with LocalStack:
 
-1. Create a fork of the MCP Ansible server repository
+1. Create a fork of the MCP SysOperator server repository
 2. Modify the utils.ts file to use awslocal instead of aws
 3. Modify the aws.ts file to use shell commands with awslocal instead of AWS modules
 4. Add a flag or environment variable to toggle between real AWS and LocalStack
 5. Rebuild the server and test with LocalStack
 
-This approach allows you to use the MCP Ansible server with LocalStack for testing without affecting the ability to use it with real AWS when needed.
+This approach allows you to use the MCP SysOperator server with LocalStack for testing without affecting the ability to use it with real AWS when needed.

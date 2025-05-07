@@ -1,6 +1,10 @@
-# MCP SysOperator
+<p align="center">
+  <img src="https://www.tarnover.com/assets/images/logo.png" alt="SysOperator" width="500">
+</p>
 
-A Model Context Protocol (MCP) server for Infrastructure as Code operations. This server allows AI assistants to interact with Ansible and Terraform, execute playbooks and Terraform plans, manage cloud resources, and perform other infrastructure operations directly.
+# MCP SysOperator
+ A Model Context Protocol (MCP) server for Infrastructure as Code operations. This server allows AI assistants to interact with Ansible and Terraform, execute playbooks and Terraform plans, manage cloud resources, and perform other infrastructure operations directly.  
+ (Project previously known as _mcp-ansible_) 
 
 ## Features
 
@@ -28,8 +32,8 @@ A Model Context Protocol (MCP) server for Infrastructure as Code operations. Thi
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/your-username/mcp-ansible.git
-cd mcp-ansible
+git clone https://github.com/tarnover/mcp-sysoperator.git
+cd mcp-sysoperator
 ```
 
 ### 2. Install dependencies
@@ -61,16 +65,16 @@ Add the following to the `mcpServers` section:
 ```json
 {
   "mcpServers": {
-    "ansible": {
+    "sysoperator": {
       "command": "node",
-      "args": ["/absolute/path/to/mcp-ansible/build/index.js"],
+      "args": ["/absolute/path/to/mcp-sysoperator/build/index.js"],
       "env": {}
     }
   }
 }
 ```
 
-Make sure to replace `/absolute/path/to/mcp-ansible` with the actual path to your installation.
+Make sure to replace `/absolute/path/to/mcp-sysoperator` with the actual path to your installation.
 
 ## Usage Examples
 
@@ -80,7 +84,7 @@ Once installed and configured, the MCP server provides the following tools to th
 
 ```
 <use_mcp_tool>
-<server_name>ansible</server_name>
+<server_name>sysoperator</server_name>
 <tool_name>run_playbook</tool_name>
 <arguments>
 {
@@ -101,7 +105,7 @@ Once installed and configured, the MCP server provides the following tools to th
 
 ```
 <use_mcp_tool>
-<server_name>ansible</server_name>
+<server_name>sysoperator</server_name>
 <tool_name>list_inventory</tool_name>
 <arguments>
 {
@@ -115,7 +119,7 @@ Once installed and configured, the MCP server provides the following tools to th
 
 ```
 <use_mcp_tool>
-<server_name>ansible</server_name>
+<server_name>sysoperator</server_name>
 <tool_name>check_syntax</tool_name>
 <arguments>
 {
@@ -129,7 +133,7 @@ Once installed and configured, the MCP server provides the following tools to th
 
 ```
 <use_mcp_tool>
-<server_name>ansible</server_name>
+<server_name>sysoperator</server_name>
 <tool_name>list_tasks</tool_name>
 <arguments>
 {
@@ -143,8 +147,8 @@ Once installed and configured, the MCP server provides the following tools to th
 
 ```
 <access_mcp_resource>
-<server_name>ansible</server_name>
-<uri>ansible://inventory/default</uri>
+<server_name>sysoperator</server_name>
+<uri>sysoperator://inventory/default</uri>
 </access_mcp_resource>
 ```
 
@@ -152,7 +156,7 @@ Once installed and configured, the MCP server provides the following tools to th
 
 ```
 <use_mcp_tool>
-<server_name>ansible</server_name>
+<server_name>sysoperator</server_name>
 <tool_name>aws_s3</tool_name>
 <arguments>
 {
@@ -167,7 +171,7 @@ Once installed and configured, the MCP server provides the following tools to th
 
 ```
 <use_mcp_tool>
-<server_name>ansible</server_name>
+<server_name>sysoperator</server_name>
 <tool_name>terraform</tool_name>
 <arguments>
 {
@@ -178,7 +182,7 @@ Once installed and configured, the MCP server provides the following tools to th
 </use_mcp_tool>
 
 <use_mcp_tool>
-<server_name>ansible</server_name>
+<server_name>sysoperator</server_name>
 <tool_name>terraform</tool_name>
 <arguments>
 {
@@ -197,7 +201,7 @@ Once installed and configured, the MCP server provides the following tools to th
 
 ```
 <use_mcp_tool>
-<server_name>ansible</server_name>
+<server_name>sysoperator</server_name>
 <tool_name>terraform</tool_name>
 <arguments>
 {
@@ -217,7 +221,7 @@ Once installed and configured, the MCP server provides the following tools to th
 
 ```
 <use_mcp_tool>
-<server_name>ansible</server_name>
+<server_name>sysoperator</server_name>
 <tool_name>terraform</tool_name>
 <arguments>
 {
@@ -302,6 +306,12 @@ To add new capabilities to the MCP server:
 3. Implement a handler function for your tool in the appropriate operations file
 4. Add the schema definition in `common/types.ts`
 5. Rebuild with `npm run build`
+
+### ⚠️ Disclaimer
+
+SysOperator is currently in active development and undergoing extensive testing. It is not recommended for use in production environments at this time. The software may experience breaking changes, incomplete features, or unexpected behavior.
+
+**Use at your own risk.**
 
 ## License
 

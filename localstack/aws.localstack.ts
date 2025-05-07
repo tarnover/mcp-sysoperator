@@ -1,5 +1,5 @@
 // Modified aws.ts for LocalStack integration
-// This file contains modified functions from src/ansible-mcp-server/operations/aws.ts
+// This file contains modified functions from src/sysoperator/operations/aws.ts
 // to use LocalStack instead of real AWS
 
 import { execAsync, createTempDirectory, writeTempFile, cleanupTempDirectory } from './utils.localstack.js';

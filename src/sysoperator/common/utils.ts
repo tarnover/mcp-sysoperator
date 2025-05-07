@@ -1,7 +1,3 @@
-// Modified utils.ts for LocalStack integration
-// This file contains modified functions from src/sysoperator/common/utils.ts
-// to use LocalStack instead of real AWS
-
 import { existsSync } from 'fs';
 import { mkdtemp, writeFile, rm } from 'fs/promises';
 import { resolve, join } from 'path';
@@ -13,8 +9,10 @@ import {
   AnsibleInventoryNotFoundError, 
   AnsibleNotInstalledError,
   AwsCliNotInstalledError,
-  AwsCredentialsError
-} from '../src/sysoperator/common/errors.js';
+  AwsCredentialsError,
+  TerraformNotInstalledError,
+  TflocalNotInstalledError
+} from './errors.js';
 
 export const execAsync = promisify(exec);
 
@@ -120,13 +118,12 @@ export async function verifyAnsibleInstalled(): Promise<void> {
 }
 
 /**
- * Checks if LocalStack AWS CLI is installed on the system
- * @returns Promise that resolves to true if LocalStack AWS CLI is installed, false otherwise
+ * Checks if AWS CLI is installed on the system
+ * @returns Promise that resolves to true if AWS CLI is installed, false otherwise
  */
 export async function checkAwsCliInstalled(): Promise<boolean> {
   try {
-    // Modified to use awslocal instead of aws
-    await execAsync('awslocal --version');
+    await execAsync('aws --version');
     return true;
   } catch (error) {
     return false;
@@ -134,8 +131,8 @@ export async function checkAwsCliInstalled(): Promise<boolean> {
 }
 
 /**
- * Verifies that LocalStack AWS CLI is installed and throws an error if it's not
- * @throws AwsCliNotInstalledError if LocalStack AWS CLI is not installed
+ * Verifies that AWS CLI is installed and throws an error if it's not
+ * @throws AwsCliNotInstalledError if AWS CLI is not installed
  */
 export async function verifyAwsCliInstalled(): Promise<void> {
   const isInstalled = await checkAwsCliInstalled();
@@ -145,13 +142,12 @@ export async function verifyAwsCliInstalled(): Promise<void> {
 }
 
 /**
- * Checks if LocalStack is running and accessible
- * @returns Promise that resolves to true if LocalStack is running, false otherwise
+ * Checks if AWS credentials are configured properly
+ * @returns Promise that resolves to true if AWS credentials are configured, false otherwise
  */
 export async function checkAwsCredentials(): Promise<boolean> {
   try {
-    // Modified to use awslocal instead of aws
-    await execAsync('awslocal sts get-caller-identity');
+    await execAsync('aws sts get-caller-identity');
     return true;
   } catch (error) {
     return false;
@@ -159,27 +155,27 @@ export async function checkAwsCredentials(): Promise<boolean> {
 }
 
 /**
- * Verifies that LocalStack is running and accessible
- * @throws AwsCredentialsError if LocalStack is not running or accessible
+ * Verifies that AWS credentials are configured properly and throws an error if they're not
+ * @throws AwsCredentialsError if AWS credentials are not configured
  */
 export async function verifyAwsCredentials(): Promise<void> {
-  // First verify LocalStack AWS CLI is installed
+  // First verify AWS CLI is installed
   await verifyAwsCliInstalled();
   
-  // Then check if LocalStack is running
-  const isRunning = await checkAwsCredentials();
-  if (!isRunning) {
+  // Then check credentials
+  const isConfigured = await checkAwsCredentials();
+  if (!isConfigured) {
     throw new AwsCredentialsError();
   }
 }
 
 /**
- * Checks if LocalStack is running
- * @returns Promise that resolves to true if LocalStack is running, false otherwise
+ * Checks if Terraform is installed on the system
+ * @returns Promise that resolves to true if Terraform is installed, false otherwise
  */
-export async function checkLocalStackRunning(): Promise<boolean> {
+export async function checkTerraformInstalled(): Promise<boolean> {
   try {
-    await execAsync('awslocal s3 ls');
+    await execAsync('terraform --version');
     return true;
   } catch (error) {
     return false;
@@ -187,12 +183,36 @@ export async function checkLocalStackRunning(): Promise<boolean> {
 }
 
 /**
- * Verifies that LocalStack is running and throws an error if it's not
- * @throws Error if LocalStack is not running
+ * Verifies that Terraform is installed and throws an error if it's not
+ * @throws TerraformNotInstalledError if Terraform is not installed
  */
-export async function verifyLocalStackRunning(): Promise<void> {
-  const isRunning = await checkLocalStackRunning();
-  if (!isRunning) {
-    throw new Error('LocalStack is not running. Please start LocalStack with "localstack start".');
+export async function verifyTerraformInstalled(): Promise<void> {
+  const isInstalled = await checkTerraformInstalled();
+  if (!isInstalled) {
+    throw new TerraformNotInstalledError();
+  }
+}
+
+/**
+ * Checks if tflocal (Terraform with LocalStack) is installed on the system
+ * @returns Promise that resolves to true if tflocal is installed, false otherwise
+ */
+export async function checkTflocalInstalled(): Promise<boolean> {
+  try {
+    await execAsync('tflocal --version');
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
+ * Verifies that tflocal is installed and throws an error if it's not
+ * @throws TflocalNotInstalledError if tflocal is not installed
+ */
+export async function verifyTflocalInstalled(): Promise<void> {
+  const isInstalled = await checkTflocalInstalled();
+  if (!isInstalled) {
+    throw new TflocalNotInstalledError();
   }
 }

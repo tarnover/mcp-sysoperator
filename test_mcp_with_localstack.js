@@ -1,5 +1,5 @@
-// Test MCP Ansible Server with LocalStack
-// This script demonstrates how to use the MCP Ansible server with LocalStack
+// Test MCP SysOperator Server with LocalStack
+// This script demonstrates how to use the MCP SysOperator server with LocalStack
 
 const { execSync } = require('child_process');
 const fs = require('fs');
@@ -105,7 +105,7 @@ localhost ansible_connection=local
   return inventoryPath;
 }
 
-// Test the MCP Ansible server with LocalStack
+// Test the MCP SysOperator server with LocalStack
 async function testMcpWithLocalStack() {
   try {
     // Check if LocalStack is running
@@ -135,12 +135,12 @@ async function testMcpWithLocalStack() {
       console.log("Bucket may already exist, continuing...");
     }
     
-    // Test MCP Ansible server with run_playbook
-    console.log("\nTesting MCP Ansible server with run_playbook...");
+    // Test MCP SysOperator server with run_playbook
+    console.log("\nTesting MCP SysOperator server with run_playbook...");
     console.log("This would normally use the MCP tool:");
     console.log(`
 <use_mcp_tool>
-<server_name>ansible</server_name>
+<server_name>sysoperator</server_name>
 <tool_name>run_playbook</tool_name>
 <arguments>
 {
@@ -156,12 +156,12 @@ async function testMcpWithLocalStack() {
     console.log("\nRunning playbook with ansible-playbook...");
     runCommand(`ansible-playbook ${playbookPath} -i ${inventoryPath}`);
     
-    // Test MCP Ansible server with run_ad_hoc
-    console.log("\nTesting MCP Ansible server with run_ad_hoc...");
+    // Test MCP SysOperator server with run_ad_hoc
+    console.log("\nTesting MCP SysOperator server with run_ad_hoc...");
     console.log("This would normally use the MCP tool:");
     console.log(`
 <use_mcp_tool>
-<server_name>ansible</server_name>
+<server_name>sysoperator</server_name>
 <tool_name>run_ad_hoc</tool_name>
 <arguments>
 {
@@ -184,8 +184,8 @@ async function testMcpWithLocalStack() {
     console.log(`Removed temporary directory: ${tempDir}`);
     
     console.log("\nTest completed successfully!");
-    console.log("\nTo use these tests with the MCP Ansible server, you would:");
-    console.log("1. Modify src/ansible-mcp-server/common/utils.ts to use awslocal instead of aws");
+    console.log("\nTo use these tests with the MCP SysOperator server, you would:");
+    console.log("1. Modify src/sysoperator/common/utils.ts to use awslocal instead of aws");
     console.log("2. Rebuild the server with npm run build");
     console.log("3. Use the MCP tools as shown in the examples above");
   } catch (error) {
