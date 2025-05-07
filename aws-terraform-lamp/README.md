@@ -93,17 +93,18 @@ graph TB
     Client --> Internet((Internet))
     Internet --> Route53
     
-    %% Styling
-    style VPC fill:#e4f5f7,stroke:#099,stroke-width:1px
-    style PublicSubnets fill:#c9ebef,stroke:#099,stroke-dasharray:5 5
-    style PrivateSubnets fill:#c9ebef,stroke:#099,stroke-dasharray:5 5
-    style DatabaseSubnets fill:#c9ebef,stroke:#099,stroke-dasharray:5 5
-    style Compute fill:#f4e8d9,stroke:#d67b00,stroke-width:1px
-    style Database fill:#e6d6e8,stroke:#9a3ca0,stroke-width:1px
-    style Monitoring fill:#d7e8d5,stroke:#38761d,stroke-width:1px
+    %% Styling with high contrast for dark themes
+    style VPC fill:#333333,stroke:#ffffff,stroke-width:2px,color:#ffffff
+    style PublicSubnets fill:#444444,stroke:#ffffff,stroke-dasharray:5 5,color:#ffffff
+    style PrivateSubnets fill:#444444,stroke:#ffffff,stroke-dasharray:5 5,color:#ffffff
+    style DatabaseSubnets fill:#444444,stroke:#ffffff,stroke-dasharray:5 5,color:#ffffff
+    style Compute fill:#555555,stroke:#ffffff,stroke-width:2px,color:#ffffff
+    style Database fill:#555555,stroke:#ffffff,stroke-width:2px,color:#ffffff
+    style Monitoring fill:#555555,stroke:#ffffff,stroke-width:2px,color:#ffffff
     
-    classDef default fill:#ddf,stroke:#33a,stroke-width:1px
-    class Client,Internet none
+    classDef default fill:#666666,stroke:#ffffff,stroke-width:1px,color:#ffffff
+    classDef circleNode fill:#333333,stroke:#ffffff,color:#ffffff
+    class Client,Internet circleNode
 ```
 
 This project implements a complete LAMP stack with the following components:
