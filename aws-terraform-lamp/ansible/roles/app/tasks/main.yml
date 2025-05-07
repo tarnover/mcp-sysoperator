@@ -1,0 +1,251 @@
+---
+# Application role tasks
+# These tasks deploy the application files and configure the application
+
+- name: Ensure application directory exists
+  file:
+    path: "{{ apache_document_root | default('/var/www/html') }}"
+    state: directory
+    owner: "{{ app_user | default('apache') }}"
+    group: "{{ app_group | default('apache') }}"
+    mode: 0755
+  tags:
+    - app
+    - deploy
+
+- name: Create application subdirectories
+  file:
+    path: "{{ apache_document_root | default('/var/www/html') }}/{{ item }}"
+    state: directory
+    owner: "{{ app_user | default('apache') }}"
+    group: "{{ app_group | default('apache') }}"
+    mode: 0755
+  with_items:
+    - assets
+    - assets/css
+    - assets/js
+    - assets/images
+    - config
+    - includes
+  tags:
+    - app
+    - deploy
+
+- name: Deploy application index file
+  template:
+    src: index.php.j2
+    dest: "{{ apache_document_root | default('/var/www/html') }}/index.php"
+    owner: "{{ app_user | default('apache') }}"
+    group: "{{ app_group | default('apache') }}"
+    mode: 0644
+  tags:
+    - app
+    - deploy
+
+- name: Deploy application CSS
+  template:
+    src: style.css.j2
+    dest: "{{ apache_document_root | default('/var/www/html') }}/assets/css/style.css"
+    owner: "{{ app_user | default('apache') }}"
+    group: "{{ app_group | default('apache') }}"
+    mode: 0644
+  tags:
+    - app
+    - deploy
+
+- name: Deploy application JavaScript
+  template:
+    src: script.js.j2
+    dest: "{{ apache_document_root | default('/var/www/html') }}/assets/js/script.js"
+    owner: "{{ app_user | default('apache') }}"
+    group: "{{ app_group | default('apache') }}"
+    mode: 0644
+  tags:
+    - app
+    - deploy
+
+- name: Deploy database test file
+  template:
+    src: db-test.php.j2
+    dest: "{{ apache_document_root | default('/var/www/html') }}/db-test.php"
+    owner: "{{ app_user | default('apache') }}"
+    group: "{{ app_group | default('apache') }}"
+    mode: 0644
+  tags:
+    - app
+    - deploy
+    - db
+
+- name: Deploy environment configuration file
+  template:
+    src: env.j2
+    dest: "{{ apache_document_root | default('/var/www/html') }}/config/env.php"
+    owner: "{{ app_user | default('apache') }}"
+    group: "{{ app_group | default('apache') }}"
+    mode: 0640
+  tags:
+    - app
+    - deploy
+    - config
+
+- name: Create .htaccess file
+  template:
+    src: htaccess.j2
+    dest: "{{ apache_document_root | default('/var/www/html') }}/.htaccess"
+    owner: "{{ app_user | default('apache') }}"
+    group: "{{ app_group | default('apache') }}"
+    mode: 0644
+  tags:
+    - app
+    - deploy
+    - security
+
+- name: Create robots.txt file
+  template:
+    src: robots.txt.j2
+    dest: "{{ apache_document_root | default('/var/www/html') }}/robots.txt"
+    owner: "{{ app_user | default('apache') }}"
+    group: "{{ app_group | default('apache') }}"
+    mode: 0644
+  tags:
+    - app
+    - deploy
+    - security
+
+- name: Create favicon.ico
+  copy:
+    src: favicon.ico
+    dest: "{{ apache_document_root | default('/var/www/html') }}/favicon.ico"
+    owner: "{{ app_user | default('apache') }}"
+    group: "{{ app_group | default('apache') }}"
+    mode: 0644
+  ignore_errors: yes
+  tags:
+    - app
+    - deploy
+
+- name: Create uploads directory on EFS
+  file:
+    path: "{{ efs_mount_point | default('/mnt/efs') }}/uploads"
+    state: directory
+    owner: "{{ app_user | default('apache') }}"
+    group: "{{ app_group | default('apache') }}"
+    mode: 0755
+  when: not skip_aws_dependencies | default(false)
+  tags:
+    - app
+    - deploy
+    - efs
+
+- name: Create symlink to uploads directory
+  file:
+    src: "{{ efs_mount_point | default('/mnt/efs') }}/uploads"
+    dest: "{{ apache_document_root | default('/var/www/html') }}/uploads"
+    state: link
+    owner: "{{ app_user | default('apache') }}"
+    group: "{{ app_group | default('apache') }}"
+  when: not skip_aws_dependencies | default(false)
+  tags:
+    - app
+    - deploy
+    - efs
+
+- name: Create local uploads directory for development
+  file:
+    path: "{{ apache_document_root | default('/var/www/html') }}/uploads"
+    state: directory
+    owner: "{{ app_user | default('apache') }}"
+    group: "{{ app_group | default('apache') }}"
+    mode: 0755
+  when: skip_aws_dependencies | default(false)
+  tags:
+    - app
+    - deploy
+    - development
+
+- name: Set AWS environment variables
+  template:
+    src: aws-env.j2
+    dest: "/etc/profile.d/aws-env.sh"
+    owner: root
+    group: root
+    mode: 0644
+  when: not skip_aws_dependencies | default(false)
+  tags:
+    - app
+    - config
+    - aws
+
+- name: Set application environment variables
+  template:
+    src: app-env.j2
+    dest: "/etc/profile.d/app-env.sh"
+    owner: root
+    group: root
+    mode: 0644
+  tags:
+    - app
+    - config
+
+- name: Set SELinux context for application directory
+  command: "chcon -R -t httpd_sys_content_t {{ apache_document_root | default('/var/www/html') }}"
+  changed_when: false
+  when: 
+    - ansible_os_family == 'RedHat'
+    - selinux_state != 'disabled'
+  tags:
+    - app
+    - security
+    - selinux
+
+- name: Set SELinux context for writable directories
+  command: "chcon -R -t httpd_sys_rw_content_t {{ apache_document_root | default('/var/www/html') }}/{{ item }}"
+  changed_when: false
+  with_items:
+    - uploads
+    - config
+  when: 
+    - ansible_os_family == 'RedHat'
+    - selinux_state != 'disabled'
+  tags:
+    - app
+    - security
+    - selinux
+
+- name: Create application cron jobs
+  cron:
+    name: "{{ item.name }}"
+    minute: "{{ item.minute | default('*') }}"
+    hour: "{{ item.hour | default('*') }}"
+    day: "{{ item.day | default('*') }}"
+    month: "{{ item.month | default('*') }}"
+    weekday: "{{ item.weekday | default('*') }}"
+    job: "{{ item.job }}"
+    user: "{{ item.user | default(app_user) | default('apache') }}"
+  with_items: "{{ app_cron_jobs | default([]) }}"
+  tags:
+    - app
+    - cron
+
+- name: Create application log directory
+  file:
+    path: "{{ app_log_dir | default('/var/log/app') }}"
+    state: directory
+    owner: "{{ app_user | default('apache') }}"
+    group: "{{ app_group | default('apache') }}"
+    mode: 0755
+  tags:
+    - app
+    - logs
+
+- name: Configure logrotate for application logs
+  template:
+    src: logrotate.j2
+    dest: "/etc/logrotate.d/app"
+    owner: root
+    group: root
+    mode: 0644
+  tags:
+    - app
+    - logs
+    - logrotate

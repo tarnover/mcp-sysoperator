@@ -1,0 +1,97 @@
+# {{ ansible_managed }}
+# SSH server configuration for {{ inventory_hostname }}
+# This file is managed by Ansible - local changes will be overwritten
+
+# Basic SSH server configuration
+Port {{ ssh_port | default(22) }}
+Protocol 2
+HostKey /etc/ssh/ssh_host_rsa_key
+HostKey /etc/ssh/ssh_host_ecdsa_key
+HostKey /etc/ssh/ssh_host_ed25519_key
+
+# Ciphers and keying
+KexAlgorithms curve25519-sha256@libssh.org,diffie-hellman-group-exchange-sha256
+Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr
+MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com
+
+# Logging
+SyslogFacility AUTH
+LogLevel VERBOSE
+
+# Authentication
+LoginGraceTime 30s
+PermitRootLogin {{ ssh_permit_root_login | default('no') }}
+StrictModes yes
+MaxAuthTries 3
+MaxSessions 10
+
+# Password authentication
+PasswordAuthentication {{ ssh_password_authentication | default('no') }}
+PermitEmptyPasswords no
+ChallengeResponseAuthentication no
+
+# Public key authentication
+PubkeyAuthentication yes
+AuthorizedKeysFile .ssh/authorized_keys
+
+# Other authentication methods
+HostbasedAuthentication no
+IgnoreRhosts yes
+IgnoreUserKnownHosts no
+
+# Forwarding
+AllowAgentForwarding yes
+AllowTcpForwarding yes
+GatewayPorts no
+X11Forwarding no
+X11DisplayOffset 10
+X11UseLocalhost yes
+PermitTTY yes
+PrintMotd no
+PrintLastLog yes
+TCPKeepAlive yes
+
+# Security
+UsePAM yes
+UseDNS no
+PermitUserEnvironment no
+Compression delayed
+ClientAliveInterval 300
+ClientAliveCountMax 3
+
+# SFTP configuration
+Subsystem sftp internal-sftp
+
+# Allow only specific users/groups
+{% if ssh_allowed_users is defined and ssh_allowed_users | length > 0 %}
+AllowUsers {{ ssh_allowed_users | join(' ') }}
+{% endif %}
+
+{% if ssh_allowed_groups is defined and ssh_allowed_groups | length > 0 %}
+AllowGroups {{ ssh_allowed_groups | join(' ') }}
+{% endif %}
+
+# Deny specific users/groups
+{% if ssh_denied_users is defined and ssh_denied_users | length > 0 %}
+DenyUsers {{ ssh_denied_users | join(' ') }}
+{% endif %}
+
+{% if ssh_denied_groups is defined and ssh_denied_groups | length > 0 %}
+DenyGroups {{ ssh_denied_groups | join(' ') }}
+{% endif %}
+
+# Match blocks for specific configurations
+{% if ssh_match_blocks is defined %}
+{% for match_block in ssh_match_blocks %}
+Match {{ match_block.criteria }}
+{% for option, value in match_block.options.items() %}
+    {{ option }} {{ value }}
+{% endfor %}
+
+{% endfor %}
+{% endif %}
+
+# Additional custom SSH configuration
+{% if ssh_custom_config is defined %}
+{{ ssh_custom_config }}
+{% endif %}

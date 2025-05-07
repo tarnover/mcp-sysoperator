@@ -1,0 +1,97 @@
+# Terraform files
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars.json
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+.terraform.lock.hcl
+tfdestroyplan
+
+# Ansible files
+*.retry
+ansible/.ansible_cache/
+ansible/terraform_outputs.json
+
+# Local environment files
+.env
+.env.*
+.envrc
+.direnv/
+
+# OS specific files
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+*.sublime-*
+.project
+.settings/
+.classpath
+
+# Python files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Dependency directories
+node_modules/
+jspm_packages/
+
+# Distribution directories
+dist/
+build/
+
+# Temporary files
+tmp/
+temp/
+
+# Sensitive files
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.truststore
+secrets.yml
+secrets.yaml
+secrets.json
+secrets.tfvars

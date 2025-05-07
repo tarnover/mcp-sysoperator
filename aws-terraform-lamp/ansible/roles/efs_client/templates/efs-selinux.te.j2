@@ -1,0 +1,17 @@
+module efs 1.0;
+
+require {
+    type httpd_t;
+    type nfs_t;
+    type unconfined_t;
+    class file { read write getattr open create unlink rename setattr };
+    class dir { read write getattr open create rmdir search add_name remove_name };
+}
+
+#============= httpd_t ==============
+allow httpd_t nfs_t:dir { read write getattr open create rmdir search add_name remove_name };
+allow httpd_t nfs_t:file { read write getattr open create unlink rename setattr };
+
+#============= unconfined_t ==============
+allow unconfined_t nfs_t:dir { read write getattr open create rmdir search add_name remove_name };
+allow unconfined_t nfs_t:file { read write getattr open create unlink rename setattr };

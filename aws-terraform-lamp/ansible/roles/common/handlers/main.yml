@@ -1,0 +1,55 @@
+---
+# Common role handlers
+# These handlers are used by the common role tasks
+
+- name: restart ntp service
+  service:
+    name: "{{ 'ntp' if ansible_os_family == 'Debian' else 'chronyd' }}"
+    state: restarted
+  listen: restart ntp service
+
+- name: restart ssh service
+  service:
+    name: "{{ 'ssh' if ansible_os_family == 'Debian' else 'sshd' }}"
+    state: restarted
+  listen: restart ssh service
+
+- name: restart firewall service
+  service:
+    name: "{{ 'ufw' if ansible_os_family == 'Debian' else 'firewalld' }}"
+    state: restarted
+  listen: restart firewall service
+
+- name: reload sysctl
+  command: sysctl -p
+  listen: reload sysctl
+
+- name: reload systemd
+  systemd:
+    daemon_reload: yes
+  listen: reload systemd
+
+- name: restart logrotate
+  service:
+    name: logrotate
+    state: restarted
+  listen: restart logrotate
+  ignore_errors: yes
+
+- name: update ca certificates
+  command: update-ca-certificates
+  listen: update ca certificates
+  changed_when: true
+
+- name: restart network
+  service:
+    name: "{{ 'networking' if ansible_os_family == 'Debian' else 'network' }}"
+    state: restarted
+  listen: restart network
+
+- name: reboot system
+  reboot:
+    reboot_timeout: 600
+    post_reboot_delay: 60
+    test_command: uptime
+  listen: reboot system

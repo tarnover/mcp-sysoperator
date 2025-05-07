@@ -1,0 +1,25 @@
+---
+# DB Client Role Handlers
+
+- name: restart cloudwatch agent
+  service:
+    name: amazon-cloudwatch-agent
+    state: restarted
+    enabled: yes
+  become: true
+
+- name: reload systemd
+  command: systemctl daemon-reload
+  become: true
+
+- name: reload profile
+  shell: source /etc/profile
+  args:
+    executable: /bin/bash
+  become: true
+
+- name: reload cron
+  service:
+    name: "{{ 'cron' if ansible_os_family == 'Debian' else 'crond' }}"
+    state: reloaded
+  become: true

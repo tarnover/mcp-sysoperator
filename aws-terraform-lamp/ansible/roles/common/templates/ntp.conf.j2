@@ -1,0 +1,98 @@
+# {{ ansible_managed }}
+# NTP configuration for {{ inventory_hostname }}
+# This file is managed by Ansible - local changes will be overwritten
+
+{% if ansible_os_family == 'Debian' %}
+# NTP configuration for Debian/Ubuntu systems
+
+# Drift file to remember clock rate across restarts
+driftfile /var/lib/ntp/ntp.drift
+
+# Enable this if you want statistics to be logged
+#statsdir /var/log/ntpstats/
+
+# Statistics logging configuration
+statistics loopstats peerstats clockstats
+filegen loopstats file loopstats type day enable
+filegen peerstats file peerstats type day enable
+filegen clockstats file clockstats type day enable
+
+# You should have at least 4 NTP servers
+pool 0.{{ ansible_distribution | lower }}.pool.ntp.org iburst
+pool 1.{{ ansible_distribution | lower }}.pool.ntp.org iburst
+pool 2.{{ ansible_distribution | lower }}.pool.ntp.org iburst
+pool 3.{{ ansible_distribution | lower }}.pool.ntp.org iburst
+
+# AWS Time Sync Service
+server 169.254.169.123 prefer iburst
+
+# By default, exchange time with everybody, but don't allow configuration
+restrict -4 default kod notrap nomodify nopeer noquery limited
+restrict -6 default kod notrap nomodify nopeer noquery limited
+
+# Local users may interrogate the ntp server more closely
+restrict 127.0.0.1
+restrict ::1
+
+# Needed for adding pool entries
+restrict source notrap nomodify noquery
+
+{% else %}
+# Chrony configuration for RedHat/CentOS systems
+
+# Record the rate at which the system clock gains/losses time
+driftfile /var/lib/chrony/drift
+
+# Allow the system clock to be stepped in the first three updates
+# if its offset is larger than 1 second
+makestep 1.0 3
+
+# Enable kernel synchronization of the real-time clock (RTC)
+rtcsync
+
+# Enable hardware timestamping on all interfaces that support it
+#hwtimestamp *
+
+# Increase the minimum number of selectable sources required to adjust
+# the system clock
+#minsources 2
+
+# AWS Time Sync Service
+server 169.254.169.123 prefer iburst
+
+# Use public servers from the pool.ntp.org project
+pool 0.{{ ansible_distribution | lower }}.pool.ntp.org iburst
+pool 1.{{ ansible_distribution | lower }}.pool.ntp.org iburst
+pool 2.{{ ansible_distribution | lower }}.pool.ntp.org iburst
+pool 3.{{ ansible_distribution | lower }}.pool.ntp.org iburst
+
+# Record the rate at which the system clock gains/losses time
+driftfile /var/lib/chrony/drift
+
+# Allow the system clock to be stepped in the first three updates
+# if its offset is larger than 1 second
+makestep 1.0 3
+
+# Enable kernel synchronization of the real-time clock (RTC)
+rtcsync
+
+# Allow NTP client access from local network
+#allow 192.168.0.0/16
+
+# Serve time even if not synchronized to a time source
+#local stratum 10
+
+# Specify file containing keys for NTP authentication
+keyfile /etc/chrony.keys
+
+# Specify directory for log files
+logdir /var/log/chrony
+
+# Select which information is logged
+#log measurements statistics tracking
+{% endif %}
+
+# Additional custom NTP configuration
+{% if ntp_custom_config is defined %}
+{{ ntp_custom_config }}
+{% endif %}

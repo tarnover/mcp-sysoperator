@@ -1,0 +1,50 @@
+<?php
+/**
+ * PHP Info Script
+ * {{ ansible_managed }}
+ * 
+ * This script displays detailed information about the PHP environment.
+ * WARNING: This file should only be accessible in non-production environments
+ * as it exposes sensitive system information.
+ */
+
+// Check if we're in production and restrict access
+$environment = getenv('ENVIRONMENT') ?: '{{ environment | default("production") }}';
+$allowed_ips = {{ php_info_allowed_ips | default(['127.0.0.1', '::1']) | to_json }};
+$client_ip = $_SERVER['REMOTE_ADDR'];
+
+// In production, only allow specific IPs
+if ($environment === 'production' && !in_array($client_ip, $allowed_ips)) {
+    header('HTTP/1.1 403 Forbidden');
+    echo '<h1>403 Forbidden</h1>';
+    echo '<p>Access to this resource is restricted in production environments.</p>';
+    exit;
+}
+
+// Display a warning banner
+echo '<div style="background-color: #f8d7da; color: #721c24; padding: 10px; margin-bottom: 20px; border: 1px solid #f5c6cb; border-radius: 4px;">';
+echo '<h2 style="margin-top: 0;">Security Warning</h2>';
+echo '<p>This page displays sensitive information about your PHP configuration. It should not be accessible in production environments.</p>';
+echo '<p>Current environment: <strong>' . htmlspecialchars($environment) . '</strong></p>';
+echo '<p>Client IP: <strong>' . htmlspecialchars($client_ip) . '</strong></p>';
+echo '</div>';
+
+// Display server information
+echo '<h2>Server Information</h2>';
+echo '<ul>';
+echo '<li>Server Name: ' . htmlspecialchars($_SERVER['SERVER_NAME']) . '</li>';
+echo '<li>Server Software: ' . htmlspecialchars($_SERVER['SERVER_SOFTWARE']) . '</li>';
+echo '<li>Server IP: ' . htmlspecialchars($_SERVER['SERVER_ADDR']) . '</li>';
+echo '<li>Document Root: ' . htmlspecialchars($_SERVER['DOCUMENT_ROOT']) . '</li>';
+echo '</ul>';
+
+// Display AWS environment information if available
+echo '<h2>AWS Environment</h2>';
+echo '<ul>';
+echo '<li>Instance ID: ' . htmlspecialchars(getenv('EC2_INSTANCE_ID') ?: 'Not available') . '</li>';
+echo '<li>Region: ' . htmlspecialchars(getenv('EC2_REGION') ?: 'Not available') . '</li>';
+echo '<li>Availability Zone: ' . htmlspecialchars(getenv('EC2_AVAILABILITY_ZONE') ?: 'Not available') . '</li>';
+echo '</ul>';
+
+// Display PHP information
+phpinfo();

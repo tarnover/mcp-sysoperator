@@ -1,0 +1,168 @@
+---
+# CloudWatch logs configuration for Apache and PHP
+# This file is included from main.yml when CloudWatch is enabled
+
+- name: Install CloudWatch agent
+  block:
+    - name: Download CloudWatch agent
+      get_url:
+        url: "https://s3.{{ aws_region }}.amazonaws.com/amazoncloudwatch-agent-{{ aws_region }}/{{ ansible_system | lower }}/amd64/latest/amazon-cloudwatch-agent.rpm"
+        dest: /tmp/amazon-cloudwatch-agent.rpm
+        mode: '0644'
+      when: ansible_os_family == 'RedHat'
+      
+    - name: Download CloudWatch agent (Debian/Ubuntu)
+      get_url:
+        url: "https://s3.{{ aws_region }}.amazonaws.com/amazoncloudwatch-agent-{{ aws_region }}/{{ ansible_system | lower }}/amd64/latest/amazon-cloudwatch-agent.deb"
+        dest: /tmp/amazon-cloudwatch-agent.deb
+        mode: '0644'
+      when: ansible_os_family == 'Debian'
+      
+    - name: Install CloudWatch agent (RedHat/CentOS)
+      yum:
+        name: /tmp/amazon-cloudwatch-agent.rpm
+        state: present
+      when: ansible_os_family == 'RedHat'
+      
+    - name: Install CloudWatch agent (Debian/Ubuntu)
+      apt:
+        deb: /tmp/amazon-cloudwatch-agent.deb
+        state: present
+      when: ansible_os_family == 'Debian'
+      
+    - name: Clean up CloudWatch agent installer
+      file:
+        path: "{{ item }}"
+        state: absent
+      with_items:
+        - /tmp/amazon-cloudwatch-agent.rpm
+        - /tmp/amazon-cloudwatch-agent.deb
+  tags: monitoring
+
+- name: Create CloudWatch agent configuration directory
+  file:
+    path: /opt/aws/amazon-cloudwatch-agent/etc
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  tags: monitoring
+
+- name: Configure CloudWatch agent for Apache and PHP logs
+  template:
+    src: cloudwatch-apache-php.json.j2
+    dest: "{{ cloudwatch_agent_config_path }}"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart cloudwatch agent
+  tags: monitoring
+
+- name: Ensure CloudWatch agent service is enabled and running
+  service:
+    name: amazon-cloudwatch-agent
+    state: started
+    enabled: yes
+  tags: monitoring
+
+- name: Create IAM role for CloudWatch if not using instance profile
+  block:
+    - name: Check if instance has IAM role with CloudWatch permissions
+      command: aws iam list-attached-role-policies --role-name {{ instance_role_name }}
+      register: role_policies
+      changed_when: false
+      failed_when: false
+      
+    - name: Create CloudWatch policy document
+      copy:
+        content: |
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Action": [
+                  "cloudwatch:PutMetricData",
+                  "ec2:DescribeTags",
+                  "logs:PutLogEvents",
+                  "logs:DescribeLogStreams",
+                  "logs:DescribeLogGroups",
+                  "logs:CreateLogStream",
+                  "logs:CreateLogGroup"
+                ],
+                "Resource": "*"
+              }
+            ]
+          }
+        dest: /tmp/cloudwatch-policy.json
+        owner: root
+        group: root
+        mode: '0644'
+      when: role_policies.rc != 0 or "CloudWatchAgentServerPolicy" not in role_policies.stdout
+      
+    - name: Create CloudWatch policy
+      command: >
+        aws iam create-policy
+        --policy-name CloudWatchAgentServerPolicy-{{ inventory_hostname }}
+        --policy-document file:///tmp/cloudwatch-policy.json
+      register: policy_result
+      changed_when: policy_result.rc == 0
+      failed_when: policy_result.rc != 0 and "EntityAlreadyExists" not in policy_result.stderr
+      when: role_policies.rc != 0 or "CloudWatchAgentServerPolicy" not in role_policies.stdout
+      
+    - name: Attach CloudWatch policy to instance role
+      command: >
+        aws iam attach-role-policy
+        --role-name {{ instance_role_name }}
+        --policy-arn {{ policy_result.stdout | from_json | json_query('Policy.Arn') }}
+      when: policy_result.changed
+  when: 
+    - not skip_aws_dependencies | default(false) | bool
+    - not is_localstack | default(false) | bool
+    - instance_role_name is defined
+  tags: monitoring
+
+- name: Create CloudWatch log groups
+  command: >
+    aws logs create-log-group
+    --log-group-name {{ cloudwatch_log_group }}
+    --region {{ aws_region }}
+  register: create_log_group_result
+  changed_when: create_log_group_result.rc == 0
+  failed_when: create_log_group_result.rc != 0 and "ResourceAlreadyExistsException" not in create_log_group_result.stderr
+  when: 
+    - not skip_aws_dependencies | default(false) | bool
+    - not is_localstack | default(false) | bool
+  tags: monitoring
+
+- name: Set CloudWatch log group retention
+  command: >
+    aws logs put-retention-policy
+    --log-group-name {{ cloudwatch_log_group }}
+    --retention-in-days {{ cloudwatch_log_retention_days | default(30) }}
+    --region {{ aws_region }}
+  when: 
+    - not skip_aws_dependencies | default(false) | bool
+    - not is_localstack | default(false) | bool
+    - create_log_group_result.changed
+  tags: monitoring
+
+- name: Create CloudWatch log streams for Apache and PHP
+  command: >
+    aws logs create-log-stream
+    --log-group-name {{ cloudwatch_log_group }}
+    --log-stream-name {{ item }}
+    --region {{ aws_region }}
+  register: create_log_stream_result
+  changed_when: create_log_stream_result.rc == 0
+  failed_when: create_log_stream_result.rc != 0 and "ResourceAlreadyExistsException" not in create_log_stream_result.stderr
+  with_items:
+    - "{{ instance_id }}/apache/access"
+    - "{{ instance_id }}/apache/error"
+    - "{{ instance_id }}/php-fpm/error"
+    - "{{ instance_id }}/php-fpm/www-error"
+    - "{{ instance_id }}/app/application"
+  when: 
+    - not skip_aws_dependencies | default(false) | bool
+    - not is_localstack | default(false) | bool
+  tags: monitoring

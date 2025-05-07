@@ -1,0 +1,41 @@
+---
+galaxy_info:
+  role_name: db_client
+  author: DevOps Team
+  description: Installs and configures MySQL client and related tools for LAMP stack
+  company: LAMP Stack AWS
+  license: MIT
+  min_ansible_version: 2.9
+  platforms:
+    - name: Ubuntu
+      versions:
+        - bionic
+        - focal
+        - jammy
+    - name: Debian
+      versions:
+        - stretch
+        - buster
+        - bullseye
+    - name: Amazon
+      versions:
+        - 2
+        - 2023
+    - name: EL
+      versions:
+        - 7
+        - 8
+        - 9
+  galaxy_tags:
+    - database
+    - mysql
+    - mariadb
+    - aws
+    - rds
+    - lamp
+    - web
+    - monitoring
+    - backup
+
+dependencies:
+  - role: common

@@ -1,0 +1,131 @@
+---
+# LocalStack Inventory Configuration
+# This file provides a static inventory for testing with LocalStack
+
+all:
+  vars:
+    # Common variables for all hosts
+    ansible_connection: local
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    skip_aws_dependencies: true
+    environment: development
+    aws_region: us-east-1
+    
+    # LocalStack connection details
+    localstack_host: localhost
+    localstack_port: 4566
+    localstack_endpoint: "http://{{ localstack_host }}:{{ localstack_port }}"
+    
+    # AWS credentials for LocalStack (these are dummy values)
+    aws_access_key: test
+    aws_secret_key: test
+    
+    # Database connection details for LocalStack
+    db_host: "{{ localstack_host }}"
+    db_port: 4510  # LocalStack RDS port
+    db_name: lamp_db
+    db_user: dbuser
+    db_password: dbpassword
+    
+    # EFS mount point for LocalStack
+    efs_mount_point: "/tmp/localstack/efs"
+    
+    # Web server configuration
+    apache_document_root: "/tmp/localstack/www"
+    
+    # Application settings
+    app_environment: development
+    app_debug: true
+    app_url: "http://localhost:8080"
+    
+    # Disable AWS services that aren't needed for local testing
+    cloudwatch_enabled: false
+    waf_enabled: false
+    route53_enabled: false
+    cloudfront_enabled: false
+    
+    # Testing flags
+    is_localstack: true
+    
+  children:
+    # Web server group
+    web_servers:
+      hosts:
+        web1.localstack:
+          ansible_host: localhost
+          instance_id: i-localstack-web1
+          private_ip: 127.0.0.1
+          public_ip: 127.0.0.1
+          instance_type: t3.micro
+          aws_zone: us-east-1a
+          role: web
+          component: app
+    
+    # Database server group
+    db_servers:
+      hosts:
+        db1.localstack:
+          ansible_host: localhost
+          instance_id: i-localstack-db1
+          private_ip: 127.0.0.1
+          public_ip: 127.0.0.1
+          instance_type: db.t3.micro
+          aws_zone: us-east-1a
+          role: db
+          component: database
+          
+    # Load balancer group
+    load_balancers:
+      hosts:
+        lb1.localstack:
+          ansible_host: localhost
+          instance_id: i-localstack-lb1
+          private_ip: 127.0.0.1
+          public_ip: 127.0.0.1
+          instance_type: t3.micro
+          aws_zone: us-east-1a
+          role: lb
+          component: loadbalancer
+    
+    # EFS storage group
+    storage_servers:
+      hosts:
+        efs1.localstack:
+          ansible_host: localhost
+          instance_id: i-localstack-efs1
+          private_ip: 127.0.0.1
+          public_ip: 127.0.0.1
+          instance_type: t3.micro
+          aws_zone: us-east-1a
+          role: storage
+          component: efs
+    
+    # Development group
+    development:
+      children:
+        web_servers:
+        db_servers:
+        load_balancers:
+        storage_servers:
+      vars:
+        environment: development
+    
+    # LocalStack group
+    localstack:
+      children:
+        web_servers:
+        db_servers:
+        load_balancers:
+        storage_servers:
+      vars:
+        is_localstack: true
+        
+    # LAMP stack project group
+    lamp_stack:
+      children:
+        web_servers:
+        db_servers:
+        load_balancers:
+        storage_servers:
+      vars:
+        project: lamp-stack

@@ -1,0 +1,164 @@
+# Apache HTTP Server Configuration
+# {{ ansible_managed }}
+
+# Basic server settings
+ServerRoot "/etc/httpd"
+Listen 80
+{% if apache_ssl_enabled | default(true) %}
+Listen 443
+{% endif %}
+
+# Dynamic shared object (DSO) support
+Include conf.modules.d/*.conf
+
+# Server information
+ServerName {{ apache_server_name | default(ansible_fqdn) }}
+ServerAdmin {{ apache_server_admin | default('webmaster@localhost') }}
+ServerTokens {{ apache_server_tokens | default('Prod') }}
+ServerSignature {{ apache_server_signature | default('Off') }}
+TraceEnable {{ apache_trace_enable | default('Off') }}
+
+# Timeout settings
+Timeout {{ apache_timeout | default(60) }}
+KeepAlive {{ apache_keep_alive | default('On') }}
+MaxKeepAliveRequests {{ apache_max_keep_alive_requests | default(100) }}
+KeepAliveTimeout {{ apache_keep_alive_timeout | default(5) }}
+
+# MPM prefork settings
+<IfModule prefork.c>
+    StartServers           {{ apache_start_servers | default(5) }}
+    MinSpareServers        {{ apache_min_spare_servers | default(5) }}
+    MaxSpareServers        {{ apache_max_spare_servers | default(10) }}
+    MaxRequestWorkers      {{ apache_max_request_workers | default(150) }}
+    MaxConnectionsPerChild {{ apache_max_connections_per_child | default(0) }}
+</IfModule>
+
+# MPM worker settings
+<IfModule worker.c>
+    StartServers           {{ apache_start_servers | default(3) }}
+    MinSpareThreads        25
+    MaxSpareThreads        75
+    ThreadLimit            64
+    ThreadsPerChild        25
+    MaxRequestWorkers      {{ apache_max_request_workers | default(150) }}
+    MaxConnectionsPerChild {{ apache_max_connections_per_child | default(0) }}
+</IfModule>
+
+# MPM event settings
+<IfModule event.c>
+    StartServers           {{ apache_start_servers | default(3) }}
+    MinSpareThreads        25
+    MaxSpareThreads        75
+    ThreadLimit            64
+    ThreadsPerChild        25
+    MaxRequestWorkers      {{ apache_max_request_workers | default(150) }}
+    MaxConnectionsPerChild {{ apache_max_connections_per_child | default(0) }}
+</IfModule>
+
+# User and group settings
+User {{ app_user | default('apache') }}
+Group {{ app_group | default('apache') }}
+
+# Directory and file settings
+<Directory />
+    AllowOverride none
+    Require all denied
+</Directory>
+
+DocumentRoot "{{ apache_document_root | default('/var/www/html') }}"
+
+<Directory "{{ apache_document_root | default('/var/www/html') }}">
+    Options FollowSymLinks
+    AllowOverride All
+    Require all granted
+</Directory>
+
+<IfModule dir_module>
+    DirectoryIndex index.html index.php
+</IfModule>
+
+# File access restrictions
+<Files ".ht*">
+    Require all denied
+</Files>
+
+# Logging settings
+ErrorLog "{{ apache_log_dir | default('/var/log/httpd') }}/error_log"
+LogLevel warn
+
+<IfModule log_config_module>
+    LogFormat "%h %l %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-Agent}i\"" combined
+    LogFormat "%h %l %u %t \"%r\" %>s %b" common
+    LogFormat "%{Referer}i -> %U" referer
+    LogFormat "%{User-agent}i" agent
+    LogFormat "%h %l %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-Agent}i\" %I %O" combinedio
+    
+    CustomLog "{{ apache_log_dir | default('/var/log/httpd') }}/access_log" combined
+</IfModule>
+
+# MIME types
+<IfModule mime_module>
+    TypesConfig /etc/mime.types
+    AddType application/x-compress .Z
+    AddType application/x-gzip .gz .tgz
+    AddType text/html .shtml
+    AddType application/x-httpd-php .php
+    AddType application/x-httpd-php-source .phps
+    AddOutputFilter INCLUDES .shtml
+</IfModule>
+
+# Security settings
+<IfModule mod_security2.c>
+    SecRuleEngine On
+    SecRequestBodyAccess On
+    SecResponseBodyAccess On
+    SecResponseBodyMimeType text/plain text/html text/xml application/json
+    SecResponseBodyLimit 524288
+    SecServerSignature "Apache"
+    SecAuditEngine RelevantOnly
+    SecAuditLogRelevantStatus "^(?:5|4(?!04))"
+    SecAuditLogParts ABIJDEFHZ
+    SecAuditLogType Serial
+    SecAuditLog {{ apache_log_dir | default('/var/log/httpd') }}/modsec_audit.log
+    SecTmpDir /tmp
+    SecDataDir /tmp
+    SecDebugLog {{ apache_log_dir | default('/var/log/httpd') }}/modsec_debug.log
+    SecDebugLogLevel 0
+    SecUploadDir /tmp
+    SecUploadKeepFiles Off
+    SecPcreMatchLimit 150000
+    SecPcreMatchLimitRecursion 150000
+    
+    # Default security level
+    SecRuleEngine {{ apache_security_level | default('DetectionOnly') }}
+    
+    # Include OWASP ModSecurity Core Rule Set
+    IncludeOptional /etc/httpd/modsecurity.d/*.conf
+    IncludeOptional /etc/httpd/modsecurity.d/activated_rules/*.conf
+</IfModule>
+
+# SSL/TLS settings
+<IfModule mod_ssl.c>
+    SSLProtocol {{ apache_ssl_protocol | default('all -SSLv3 -TLSv1 -TLSv1.1') }}
+    SSLHonorCipherOrder {{ apache_ssl_honor_cipher_order | default('On') }}
+    SSLCipherSuite {{ apache_ssl_cipher_suite | default('ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384') }}
+    SSLSessionTickets {{ apache_ssl_session_tickets | default('Off') }}
+    SSLSessionCache shmcb:/run/httpd/sslcache(512000)
+    SSLSessionCacheTimeout 300
+    SSLStaplingCache "shmcb:logs/ssl_stapling(32768)"
+</IfModule>
+
+# PHP settings
+<IfModule php_module>
+    php_admin_flag engine on
+    php_admin_flag safe_mode off
+    php_admin_value open_basedir "{{ apache_document_root | default('/var/www/html') }}:/tmp"
+    php_admin_value upload_tmp_dir /tmp
+    php_admin_value session.save_path "{{ php_session_save_path | default('/var/lib/php/session') }}"
+    php_admin_flag display_errors {{ 'On' if environment | default('production') != 'production' else 'Off' }}
+    php_admin_flag log_errors on
+    php_admin_value error_log "{{ apache_log_dir | default('/var/log/httpd') }}/php_errors.log"
+</IfModule>
+
+# Include additional configuration files
+IncludeOptional conf.d/*.conf

@@ -1,0 +1,315 @@
+<?php
+/**
+ * Database Test Script
+ * {{ ansible_managed }}
+ * 
+ * This script tests the database connection and performs basic operations.
+ */
+
+// Load environment configuration
+require_once 'config/env.php';
+
+// Load database credentials
+require_once 'config/db-credentials.php';
+
+// Set content type based on the request
+$isAjax = !empty($_SERVER['HTTP_X_REQUESTED_WITH']) && 
+          strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
+
+if ($isAjax) {
+    header('Content-Type: application/json');
+} else {
+    header('Content-Type: text/html');
+}
+
+// Initialize response array
+$response = [
+    'success' => false,
+    'message' => '',
+    'details' => [],
+    'timestamp' => date('Y-m-d H:i:s')
+];
+
+// Test database connection
+try {
+    // Check if we have a database connection from db-credentials.php
+    if (!isset($pdo)) {
+        throw new Exception("Database connection not initialized");
+    }
+    
+    // Test the connection with a simple query
+    $stmt = $pdo->query('SELECT 1 as test');
+    $result = $stmt->fetch();
+    
+    if ($result['test'] == 1) {
+        $response['success'] = true;
+        $response['message'] = 'Database connection successful';
+        
+        // Get database version
+        $stmt = $pdo->query('SELECT VERSION() as version');
+        $versionResult = $stmt->fetch();
+        $response['details']['version'] = $versionResult['version'];
+        
+        // Get database status
+        $stmt = $pdo->query('SHOW STATUS LIKE "Uptime"');
+        $uptimeResult = $stmt->fetch();
+        $uptime = $uptimeResult['Value'] ?? 'Unknown';
+        $response['details']['uptime'] = $uptime . ' seconds';
+        
+        // Get database variables
+        $stmt = $pdo->query('SHOW VARIABLES LIKE "max_connections"');
+        $maxConnectionsResult = $stmt->fetch();
+        $response['details']['max_connections'] = $maxConnectionsResult['Value'] ?? 'Unknown';
+        
+        // Get current connections
+        $stmt = $pdo->query('SELECT COUNT(*) as count FROM information_schema.processlist');
+        $connectionsResult = $stmt->fetch();
+        $response['details']['current_connections'] = $connectionsResult['count'] ?? 'Unknown';
+        
+        // Create test table if it doesn't exist
+        $createTableSql = "CREATE TABLE IF NOT EXISTS `lamp_test` (
+            `id` int(11) NOT NULL AUTO_INCREMENT,
+            `test_key` varchar(50) NOT NULL,
+            `test_value` text,
+            `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            KEY `test_key` (`test_key`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
+        
+        $pdo->exec($createTableSql);
+        $response['details']['test_table_created'] = true;
+        
+        // Insert a test record
+        $testKey = 'test_' . time();
+        $testValue = 'Test value from ' . $_SERVER['SERVER_ADDR'] . ' at ' . date('Y-m-d H:i:s');
+        
+        $stmt = $pdo->prepare('INSERT INTO `lamp_test` (`test_key`, `test_value`) VALUES (?, ?)');
+        $stmt->execute([$testKey, $testValue]);
+        $insertId = $pdo->lastInsertId();
+        
+        $response['details']['test_record_inserted'] = true;
+        $response['details']['insert_id'] = $insertId;
+        
+        // Retrieve the test record
+        $stmt = $pdo->prepare('SELECT * FROM `lamp_test` WHERE `id` = ?');
+        $stmt->execute([$insertId]);
+        $retrievedRecord = $stmt->fetch();
+        
+        $response['details']['test_record_retrieved'] = true;
+        $response['details']['retrieved_record'] = [
+            'id' => $retrievedRecord['id'],
+            'test_key' => $retrievedRecord['test_key'],
+            'test_value' => $retrievedRecord['test_value'],
+            'created_at' => $retrievedRecord['created_at']
+        ];
+        
+        // Get record count
+        $stmt = $pdo->query('SELECT COUNT(*) as count FROM `lamp_test`');
+        $countResult = $stmt->fetch();
+        $response['details']['total_test_records'] = $countResult['count'] ?? 'Unknown';
+    } else {
+        throw new Exception("Database connection test failed");
+    }
+} catch (PDOException $e) {
+    $response['success'] = false;
+    $response['message'] = 'Database connection failed: ' . $e->getMessage();
+    $response['details']['error_code'] = $e->getCode();
+} catch (Exception $e) {
+    $response['success'] = false;
+    $response['message'] = $e->getMessage();
+}
+
+// Return the response based on the request type
+if ($isAjax) {
+    // Return JSON for AJAX requests
+    echo json_encode($response);
+} else {
+    // Return HTML for browser requests
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Database Test - {{ app_name | default("AWS LAMP Stack") }}</title>
+    <link rel="stylesheet" href="assets/css/style.css">
+    <style>
+        .test-result {
+            margin: 20px 0;
+            padding: 20px;
+            border-radius: var(--border-radius);
+            background-color: white;
+            box-shadow: var(--box-shadow);
+        }
+        
+        .test-result.success {
+            border-left: 5px solid var(--success-color);
+        }
+        
+        .test-result.error {
+            border-left: 5px solid var(--danger-color);
+        }
+        
+        .test-details {
+            margin-top: 20px;
+            font-family: var(--font-family-mono);
+            font-size: 0.9rem;
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: var(--border-radius);
+            overflow: auto;
+        }
+        
+        .test-details table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .test-details th, .test-details td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        .test-details th {
+            background-color: #f1f1f1;
+        }
+        
+        .test-details tr:hover {
+            background-color: #f1f1f1;
+        }
+        
+        .back-link {
+            display: inline-block;
+            margin-top: 20px;
+            padding: 10px 15px;
+            background-color: var(--primary-color);
+            color: white;
+            border-radius: var(--border-radius);
+            text-decoration: none;
+            transition: background-color 0.2s ease-in-out;
+        }
+        
+        .back-link:hover {
+            background-color: var(--accent-color);
+            text-decoration: none;
+            color: white;
+        }
+        
+        .timestamp {
+            font-size: 0.8rem;
+            color: #666;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Database Test</h1>
+            <p class="subtitle">Testing connection to MySQL database</p>
+        </header>
+        
+        <main>
+            <div class="test-result <?php echo $response['success'] ? 'success' : 'error'; ?>">
+                <h2><?php echo $response['success'] ? 'Connection Successful' : 'Connection Failed'; ?></h2>
+                <p><?php echo htmlspecialchars($response['message']); ?></p>
+                
+                <?php if ($response['success']): ?>
+                <div class="test-details">
+                    <h3>Database Information</h3>
+                    <table>
+                        <tr>
+                            <th>Host</th>
+                            <td><?php echo htmlspecialchars(DB_HOST); ?></td>
+                        </tr>
+                        <tr>
+                            <th>Database</th>
+                            <td><?php echo htmlspecialchars(DB_NAME); ?></td>
+                        </tr>
+                        <tr>
+                            <th>Version</th>
+                            <td><?php echo htmlspecialchars($response['details']['version']); ?></td>
+                        </tr>
+                        <tr>
+                            <th>Uptime</th>
+                            <td><?php echo htmlspecialchars($response['details']['uptime']); ?></td>
+                        </tr>
+                        <tr>
+                            <th>Max Connections</th>
+                            <td><?php echo htmlspecialchars($response['details']['max_connections']); ?></td>
+                        </tr>
+                        <tr>
+                            <th>Current Connections</th>
+                            <td><?php echo htmlspecialchars($response['details']['current_connections']); ?></td>
+                        </tr>
+                    </table>
+                    
+                    <h3>Test Operations</h3>
+                    <table>
+                        <tr>
+                            <th>Test Table Created</th>
+                            <td><?php echo $response['details']['test_table_created'] ? 'Yes' : 'No'; ?></td>
+                        </tr>
+                        <tr>
+                            <th>Test Record Inserted</th>
+                            <td><?php echo $response['details']['test_record_inserted'] ? 'Yes (ID: ' . htmlspecialchars($response['details']['insert_id']) . ')' : 'No'; ?></td>
+                        </tr>
+                        <tr>
+                            <th>Test Record Retrieved</th>
+                            <td><?php echo $response['details']['test_record_retrieved'] ? 'Yes' : 'No'; ?></td>
+                        </tr>
+                        <tr>
+                            <th>Total Test Records</th>
+                            <td><?php echo htmlspecialchars($response['details']['total_test_records']); ?></td>
+                        </tr>
+                    </table>
+                    
+                    <?php if (isset($response['details']['retrieved_record'])): ?>
+                    <h3>Retrieved Record</h3>
+                    <table>
+                        <?php foreach ($response['details']['retrieved_record'] as $key => $value): ?>
+                        <tr>
+                            <th><?php echo htmlspecialchars($key); ?></th>
+                            <td><?php echo htmlspecialchars($value); ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </table>
+                    <?php endif; ?>
+                </div>
+                <?php else: ?>
+                <div class="test-details">
+                    <h3>Error Details</h3>
+                    <table>
+                        <tr>
+                            <th>Error Code</th>
+                            <td><?php echo htmlspecialchars($response['details']['error_code'] ?? 'Unknown'); ?></td>
+                        </tr>
+                        <tr>
+                            <th>Connection Parameters</th>
+                            <td>
+                                Host: <?php echo htmlspecialchars(DB_HOST); ?><br>
+                                Database: <?php echo htmlspecialchars(DB_NAME); ?><br>
+                                User: <?php echo htmlspecialchars(DB_USER); ?>
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+                <?php endif; ?>
+                
+                <p class="timestamp">Test performed at: <?php echo htmlspecialchars($response['timestamp']); ?></p>
+            </div>
+            
+            <a href="index.php" class="back-link">Back to Dashboard</a>
+        </main>
+        
+        <footer>
+            <p>&copy; <?php echo date('Y'); ?> {{ app_name | default("AWS LAMP Stack") }}. All rights reserved.</p>
+            <p class="version">Version {{ app_version | default('1.0.0') }}</p>
+        </footer>
+    </div>
+</body>
+</html>
+<?php
+}
+?>

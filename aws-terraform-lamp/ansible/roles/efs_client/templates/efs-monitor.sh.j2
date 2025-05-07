@@ -1,0 +1,191 @@
+#!/bin/bash
+# {{ ansible_managed }}
+# EFS monitoring script for {{ inventory_hostname }}
+# This file is managed by Ansible - local changes will be overwritten
+
+# Configuration
+EFS_MOUNT_POINT="{{ efs_mount_point }}"
+EFS_ID="{{ efs_id }}"
+AWS_REGION="{{ aws_region }}"
+INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+HOSTNAME=$(hostname)
+LOG_FILE="/var/log/efs-monitor.log"
+METRICS_NAMESPACE="EFSMonitoring"
+ALERT_THRESHOLD_DISK_USAGE=85
+ALERT_THRESHOLD_IOPS=5000
+ALERT_THRESHOLD_THROUGHPUT=100
+
+# Ensure log file exists
+touch $LOG_FILE
+
+# Log with timestamp
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> $LOG_FILE
+}
+
+# Send metric to CloudWatch
+send_metric() {
+    local metric_name=$1
+    local metric_value=$2
+    local metric_unit=$3
+    
+    aws cloudwatch put-metric-data \
+        --region $AWS_REGION \
+        --namespace $METRICS_NAMESPACE \
+        --dimensions EfsId=$EFS_ID,InstanceId=$INSTANCE_ID,Hostname=$HOSTNAME \
+        --metric-name $metric_name \
+        --value $metric_value \
+        --unit $metric_unit
+    
+    log "Sent metric $metric_name: $metric_value $metric_unit"
+}
+
+# Check if EFS is mounted
+check_mount() {
+    if mount | grep -q "$EFS_MOUNT_POINT"; then
+        log "EFS is mounted at $EFS_MOUNT_POINT"
+        return 0
+    else
+        log "ERROR: EFS is not mounted at $EFS_MOUNT_POINT"
+        send_metric "EfsMounted" 0 "Count"
+        return 1
+    fi
+}
+
+# Check disk usage
+check_disk_usage() {
+    local disk_usage=$(df -h $EFS_MOUNT_POINT | awk 'NR==2 {print $5}' | sed 's/%//')
+    
+    send_metric "EfsDiskUsage" $disk_usage "Percent"
+    
+    if [ $disk_usage -gt $ALERT_THRESHOLD_DISK_USAGE ]; then
+        log "WARNING: EFS disk usage is high: ${disk_usage}%"
+        send_metric "EfsDiskUsageAlarm" 1 "Count"
+    else
+        send_metric "EfsDiskUsageAlarm" 0 "Count"
+    fi
+}
+
+# Check disk space
+check_disk_space() {
+    local disk_total=$(df -k $EFS_MOUNT_POINT | awk 'NR==2 {print $2}')
+    local disk_used=$(df -k $EFS_MOUNT_POINT | awk 'NR==2 {print $3}')
+    local disk_avail=$(df -k $EFS_MOUNT_POINT | awk 'NR==2 {print $4}')
+    
+    send_metric "EfsDiskTotal" $disk_total "Kilobytes"
+    send_metric "EfsDiskUsed" $disk_used "Kilobytes"
+    send_metric "EfsDiskAvailable" $disk_avail "Kilobytes"
+}
+
+# Check I/O performance
+check_io_performance() {
+    # Install iostat if not present
+    if ! command -v iostat &> /dev/null; then
+        if [ -f /etc/debian_version ]; then
+            apt-get update && apt-get install -y sysstat
+        elif [ -f /etc/redhat-release ]; then
+            yum install -y sysstat
+        fi
+    fi
+    
+    # Get device name for EFS mount
+    local device=$(df -h $EFS_MOUNT_POINT | awk 'NR==2 {print $1}')
+    
+    # Run iostat for 5 seconds to get I/O stats
+    local iostat_output=$(iostat -x $device 1 5 | tail -n 2)
+    
+    # Extract metrics
+    local read_iops=$(echo "$iostat_output" | awk '{print $4}')
+    local write_iops=$(echo "$iostat_output" | awk '{print $5}')
+    local read_throughput=$(echo "$iostat_output" | awk '{print $6}')
+    local write_throughput=$(echo "$iostat_output" | awk '{print $7}')
+    local io_wait=$(echo "$iostat_output" | awk '{print $10}')
+    
+    # Send metrics to CloudWatch
+    send_metric "EfsReadIOPS" $read_iops "Count/Second"
+    send_metric "EfsWriteIOPS" $write_iops "Count/Second"
+    send_metric "EfsReadThroughput" $read_throughput "Kilobytes/Second"
+    send_metric "EfsWriteThroughput" $write_throughput "Kilobytes/Second"
+    send_metric "EfsIOWait" $io_wait "Percent"
+    
+    # Check for high IOPS
+    local total_iops=$(echo "$read_iops + $write_iops" | bc)
+    if (( $(echo "$total_iops > $ALERT_THRESHOLD_IOPS" | bc -l) )); then
+        log "WARNING: EFS IOPS is high: $total_iops IOPS"
+        send_metric "EfsHighIOPSAlarm" 1 "Count"
+    else
+        send_metric "EfsHighIOPSAlarm" 0 "Count"
+    fi
+    
+    # Check for high throughput
+    local total_throughput=$(echo "$read_throughput + $write_throughput" | bc)
+    if (( $(echo "$total_throughput > $ALERT_THRESHOLD_THROUGHPUT" | bc -l) )); then
+        log "WARNING: EFS throughput is high: $total_throughput KB/s"
+        send_metric "EfsHighThroughputAlarm" 1 "Count"
+    else
+        send_metric "EfsHighThroughputAlarm" 0 "Count"
+    fi
+}
+
+# Check file operations latency
+check_file_operations() {
+    local test_file="$EFS_MOUNT_POINT/.efs-monitor-test-$(date +%s)"
+    
+    # Measure write latency
+    local write_start=$(date +%s.%N)
+    dd if=/dev/zero of=$test_file bs=1M count=10 oflag=direct 2>/dev/null
+    local write_end=$(date +%s.%N)
+    local write_latency=$(echo "$write_end - $write_start" | bc)
+    
+    # Measure read latency
+    local read_start=$(date +%s.%N)
+    dd if=$test_file of=/dev/null bs=1M count=10 iflag=direct 2>/dev/null
+    local read_end=$(date +%s.%N)
+    local read_latency=$(echo "$read_end - $read_start" | bc)
+    
+    # Clean up test file
+    rm -f $test_file
+    
+    # Send metrics to CloudWatch
+    send_metric "EfsWriteLatency" $write_latency "Seconds"
+    send_metric "EfsReadLatency" $read_latency "Seconds"
+    
+    log "File operations: Write latency: ${write_latency}s, Read latency: ${read_latency}s"
+}
+
+# Check file count
+check_file_count() {
+    local file_count=$(find $EFS_MOUNT_POINT -type f | wc -l)
+    local dir_count=$(find $EFS_MOUNT_POINT -type d | wc -l)
+    
+    send_metric "EfsFileCount" $file_count "Count"
+    send_metric "EfsDirectoryCount" $dir_count "Count"
+    
+    log "File system objects: Files: $file_count, Directories: $dir_count"
+}
+
+# Main function
+main() {
+    log "Starting EFS monitoring for $EFS_ID mounted at $EFS_MOUNT_POINT"
+    
+    # Check if EFS is mounted
+    if ! check_mount; then
+        log "Exiting due to mount check failure"
+        exit 1
+    fi
+    
+    # Send mounted metric
+    send_metric "EfsMounted" 1 "Count"
+    
+    # Run checks
+    check_disk_usage
+    check_disk_space
+    check_io_performance
+    check_file_operations
+    check_file_count
+    
+    log "EFS monitoring completed successfully"
+}
+
+# Run main function
+main

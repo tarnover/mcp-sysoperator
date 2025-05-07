@@ -1,0 +1,191 @@
+---
+# AWS EC2 Dynamic Inventory Configuration
+# This file configures Ansible to use the AWS EC2 dynamic inventory plugin
+
+plugin: aws_ec2
+regions:
+  - "{{ aws_region | default('us-east-1') }}"
+
+# AWS authentication - if not specified, will use environment variables or instance profile
+aws_access_key: "{{ aws_access_key | default(omit) }}"
+aws_secret_key: "{{ aws_secret_key | default(omit) }}"
+aws_profile: "{{ aws_profile | default(omit) }}"
+
+# Cache settings
+cache: true
+cache_plugin: jsonfile
+cache_timeout: 300
+cache_connection: /tmp/aws_inventory_cache
+cache_prefix: aws_ec2
+
+# Filtering instances
+filters:
+  # Filter by tag:Environment
+  tag:Environment:
+    - "{{ environment | default('production') }}"
+    - "{{ environment | default('production') }}-*"
+  # Filter by instance state
+  instance-state-name:
+    - running
+
+# Keyed groups - create groups from instance attributes and tags
+keyed_groups:
+  # Create groups based on AWS region
+  - prefix: aws_region
+    key: placement.region
+  
+  # Create groups based on availability zone
+  - prefix: aws_zone
+    key: placement.availability_zone
+  
+  # Create groups based on instance type
+  - prefix: aws_instance_type
+    key: instance_type
+  
+  # Create groups based on VPC ID
+  - prefix: aws_vpc
+    key: vpc_id
+  
+  # Create groups based on security groups
+  - prefix: aws_security_group
+    key: security_groups | map(attribute='group_id') | list
+  
+  # Create groups based on tags
+  - prefix: tag
+    key: tags
+  
+  # Create groups based on the 'Name' tag
+  - prefix: tag_Name
+    key: tags.Name
+  
+  # Create groups based on the 'Role' tag
+  - prefix: tag_Role
+    key: tags.Role
+  
+  # Create groups based on the 'Environment' tag
+  - prefix: tag_Environment
+    key: tags.Environment
+  
+  # Create groups based on the 'Project' tag
+  - prefix: tag_Project
+    key: tags.Project
+  
+  # Create groups based on the 'Component' tag
+  - prefix: tag_Component
+    key: tags.Component
+
+# Compose variables for each host
+compose:
+  # Set ansible_host to the public IP if available, otherwise private IP
+  ansible_host: public_ip_address | default(private_ip_address)
+  
+  # Set ansible_user based on the AMI
+  ansible_user: >-
+    {%- if image_id is search("ami-.*-amazon-linux-.*") -%}
+    ec2-user
+    {%- elif image_id is search("ami-.*-ubuntu-.*") -%}
+    ubuntu
+    {%- elif image_id is search("ami-.*-debian-.*") -%}
+    admin
+    {%- elif image_id is search("ami-.*-centos-.*") -%}
+    centos
+    {%- elif image_id is search("ami-.*-redhat-.*") -%}
+    ec2-user
+    {%- else -%}
+    ec2-user
+    {%- endif -%}
+  
+  # Set ansible_ssh_private_key_file if specified
+  ansible_ssh_private_key_file: "{{ ssh_private_key_file | default(omit) }}"
+  
+  # Set instance name from the Name tag
+  instance_name: tags.Name | default(instance_id)
+  
+  # Set environment from the Environment tag
+  environment: tags.Environment | default('production')
+  
+  # Set role from the Role tag
+  role: tags.Role | default('unknown')
+  
+  # Set component from the Component tag
+  component: tags.Component | default('unknown')
+  
+  # Set project from the Project tag
+  project: tags.Project | default('unknown')
+  
+  # Set region and availability zone
+  aws_region: placement.region
+  aws_zone: placement.availability_zone
+  
+  # Set instance type
+  instance_type: instance_type
+  
+  # Set VPC and subnet information
+  vpc_id: vpc_id
+  subnet_id: subnet_id
+  
+  # Set security group information
+  security_groups: security_groups | map(attribute='group_id') | list | join(',')
+  
+  # Set public and private IPs
+  public_ip: public_ip_address | default('')
+  private_ip: private_ip_address
+  
+  # Set instance ID
+  instance_id: instance_id
+  
+  # Set launch time
+  launch_time: launch_time
+
+# Group by tag
+group_by_instance_id: true
+group_by_region: true
+group_by_availability_zone: true
+group_by_aws_account: true
+group_by_ami_id: true
+group_by_instance_type: true
+group_by_instance_state: true
+group_by_platform: true
+group_by_key_name: true
+group_by_vpc_id: true
+group_by_security_group: true
+group_by_tag_keys: true
+group_by_tag_none: true
+group_by_route53_names: true
+
+# Predefined groups
+groups:
+  # Web servers group - instances with Role tag 'web'
+  web_servers: "'web' in (tags.Role|default(''))"
+  
+  # Database servers group - instances with Role tag 'db'
+  db_servers: "'db' in (tags.Role|default(''))"
+  
+  # Load balancers group - instances with Role tag 'lb'
+  load_balancers: "'lb' in (tags.Role|default(''))"
+  
+  # Bastion hosts group - instances with Role tag 'bastion'
+  bastion_hosts: "'bastion' in (tags.Role|default(''))"
+  
+  # All application servers - instances with Component tag 'app'
+  app_servers: "'app' in (tags.Component|default(''))"
+  
+  # All production instances - instances with Environment tag 'production'
+  production: "'production' in (tags.Environment|default(''))"
+  
+  # All staging instances - instances with Environment tag 'staging'
+  staging: "'staging' in (tags.Environment|default(''))"
+  
+  # All development instances - instances with Environment tag 'development'
+  development: "'development' in (tags.Environment|default(''))"
+  
+  # All instances in the LAMP stack project
+  lamp_stack: "'lamp-stack' in (tags.Project|default(''))"
+
+# Hostnames - determine the hostname to use for each instance
+hostnames:
+  # Use the Name tag if available, otherwise use the instance ID
+  - tag:Name
+  - dns-name
+  - private-dns-name
+  - instance-id

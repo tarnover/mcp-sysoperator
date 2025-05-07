@@ -1,0 +1,230 @@
+<?php
+/**
+ * Health check script for LAMP stack
+ * {{ ansible_managed }}
+ * This file is managed by Ansible - local changes will be overwritten
+ */
+
+// Set content type to JSON
+header('Content-Type: application/json');
+
+// Initialize response array
+$response = [
+    'status' => 'healthy',
+    'timestamp' => date('Y-m-d H:i:s'),
+    'hostname' => gethostname(),
+    'ip' => $_SERVER['SERVER_ADDR'] ?? '127.0.0.1',
+    'checks' => []
+];
+
+// Check PHP version
+$response['checks']['php'] = [
+    'status' => 'ok',
+    'version' => phpversion()
+];
+
+// Check Apache
+$response['checks']['web_server'] = [
+    'status' => 'ok',
+    'server' => $_SERVER['SERVER_SOFTWARE'] ?? 'unknown'
+];
+
+// Check disk space
+$disk_free = disk_free_space('/');
+$disk_total = disk_total_space('/');
+$disk_used_percent = 100 - round(($disk_free / $disk_total) * 100);
+
+$response['checks']['disk'] = [
+    'status' => ($disk_used_percent < 90) ? 'ok' : 'warning',
+    'free' => formatBytes($disk_free),
+    'total' => formatBytes($disk_total),
+    'used_percent' => $disk_used_percent . '%'
+];
+
+// Check memory
+$mem_info = getSystemMemInfo();
+$response['checks']['memory'] = [
+    'status' => ($mem_info['used_percent'] < 90) ? 'ok' : 'warning',
+    'free' => formatBytes($mem_info['free']),
+    'total' => formatBytes($mem_info['total']),
+    'used_percent' => $mem_info['used_percent'] . '%'
+];
+
+// Check database connection
+try {
+    $db_config = [
+        'host' => '{{ db_host }}',
+        'name' => '{{ db_name }}',
+        'user' => '{{ db_user }}',
+        'pass' => '{{ db_password }}'
+    ];
+    
+    $dsn = "mysql:host={$db_config['host']};dbname={$db_config['name']}";
+    $options = [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_TIMEOUT => 5
+    ];
+    
+    $pdo = new PDO($dsn, $db_config['user'], $db_config['pass'], $options);
+    $stmt = $pdo->query('SELECT 1');
+    
+    $response['checks']['database'] = [
+        'status' => 'ok',
+        'connection' => 'successful',
+        'host' => $db_config['host'],
+        'name' => $db_config['name']
+    ];
+} catch (PDOException $e) {
+    $response['status'] = 'degraded';
+    $response['checks']['database'] = [
+        'status' => 'error',
+        'connection' => 'failed',
+        'message' => 'Database connection error',
+        'host' => $db_config['host'],
+        'name' => $db_config['name']
+    ];
+}
+
+// Check EFS mount
+{% if efs_enabled | default(true) | bool %}
+$efs_path = '{{ efs_mount_point }}';
+if (file_exists($efs_path) && is_readable($efs_path) && is_writable($efs_path)) {
+    $response['checks']['efs'] = [
+        'status' => 'ok',
+        'path' => $efs_path,
+        'access' => 'read/write'
+    ];
+    
+    // Test write to EFS
+    $test_file = $efs_path . '/health-check-' . gethostname() . '.txt';
+    $write_test = @file_put_contents($test_file, 'Health check: ' . date('Y-m-d H:i:s'));
+    
+    if ($write_test === false) {
+        $response['status'] = 'degraded';
+        $response['checks']['efs']['status'] = 'warning';
+        $response['checks']['efs']['write_test'] = 'failed';
+    } else {
+        $response['checks']['efs']['write_test'] = 'passed';
+        // Clean up test file
+        @unlink($test_file);
+    }
+} else {
+    $response['status'] = 'degraded';
+    $response['checks']['efs'] = [
+        'status' => 'error',
+        'path' => $efs_path,
+        'access' => 'unavailable'
+    ];
+}
+{% endif %}
+
+// Check for required PHP extensions
+$required_extensions = ['pdo_mysql', 'json', 'curl', 'mbstring', 'xml'];
+$missing_extensions = [];
+
+foreach ($required_extensions as $ext) {
+    if (!extension_loaded($ext)) {
+        $missing_extensions[] = $ext;
+    }
+}
+
+$response['checks']['php_extensions'] = [
+    'status' => empty($missing_extensions) ? 'ok' : 'warning',
+    'loaded' => get_loaded_extensions(),
+    'missing' => $missing_extensions
+];
+
+// Check for writable directories
+$writable_dirs = [
+    '{{ apache_document_root }}',
+    '{{ php_sys_temp_dir | default("/tmp") }}',
+    '{{ php_session_save_path | default("/var/lib/php/session") }}'
+];
+
+$non_writable_dirs = [];
+
+foreach ($writable_dirs as $dir) {
+    if (!is_writable($dir)) {
+        $non_writable_dirs[] = $dir;
+    }
+}
+
+$response['checks']['writable_dirs'] = [
+    'status' => empty($non_writable_dirs) ? 'ok' : 'warning',
+    'non_writable' => $non_writable_dirs
+];
+
+// Check for environment variables
+$response['checks']['environment'] = [
+    'status' => 'ok',
+    'environment' => '{{ environment | default("production") }}',
+    'region' => '{{ aws_region | default("us-east-1") }}'
+];
+
+// Set overall status based on all checks
+foreach ($response['checks'] as $check) {
+    if ($check['status'] === 'error') {
+        $response['status'] = 'unhealthy';
+        break;
+    } else if ($check['status'] === 'warning' && $response['status'] !== 'unhealthy') {
+        $response['status'] = 'degraded';
+    }
+}
+
+// Output JSON response
+echo json_encode($response, JSON_PRETTY_PRINT);
+
+/**
+ * Helper function to format bytes to human-readable format
+ */
+function formatBytes($bytes, $precision = 2) {
+    $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    
+    $bytes = max($bytes, 0);
+    $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
+    $pow = min($pow, count($units) - 1);
+    
+    $bytes /= pow(1024, $pow);
+    
+    return round($bytes, $precision) . ' ' . $units[$pow];
+}
+
+/**
+ * Helper function to get system memory information
+ */
+function getSystemMemInfo() {
+    $result = ['total' => 0, 'free' => 0, 'used_percent' => 0];
+    
+    if (function_exists('shell_exec')) {
+        // Try to get memory info from /proc/meminfo on Linux
+        $meminfo = @shell_exec('cat /proc/meminfo');
+        if ($meminfo) {
+            preg_match('/MemTotal:\s+(\d+) kB/', $meminfo, $matches);
+            $result['total'] = isset($matches[1]) ? $matches[1] * 1024 : 0;
+            
+            preg_match('/MemAvailable:\s+(\d+) kB/', $meminfo, $matches);
+            $result['free'] = isset($matches[1]) ? $matches[1] * 1024 : 0;
+            
+            if ($result['total'] > 0) {
+                $result['used_percent'] = round(100 - (($result['free'] / $result['total']) * 100));
+            }
+        }
+    }
+    
+    // Fallback to PHP memory limit if system memory info is not available
+    if ($result['total'] == 0) {
+        $mem_limit = ini_get('memory_limit');
+        if (preg_match('/^(\d+)(.)$/', $mem_limit, $matches)) {
+            if ($matches[2] == 'M') {
+                $result['total'] = $matches[1] * 1024 * 1024;
+            } else if ($matches[2] == 'G') {
+                $result['total'] = $matches[1] * 1024 * 1024 * 1024;
+            }
+        }
+        $result['free'] = $result['total'] * 0.5; // Assume 50% free as fallback
+        $result['used_percent'] = 50;
+    }
+    
+    return $result;
+}

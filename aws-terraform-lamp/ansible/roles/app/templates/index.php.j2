@@ -1,0 +1,208 @@
+<?php
+/**
+ * LAMP Stack Demo Application
+ * {{ ansible_managed }}
+ * 
+ * This is a simple demo application for the AWS LAMP stack infrastructure.
+ */
+
+// Load environment configuration
+require_once 'config/env.php';
+
+// Load database credentials
+require_once 'config/db-credentials.php';
+
+// Set page title
+$pageTitle = '{{ app_name | default("AWS LAMP Stack") }}';
+
+// Get instance metadata
+$instanceId = getenv('EC2_INSTANCE_ID') ?: 'local-development';
+$availabilityZone = getenv('EC2_AVAILABILITY_ZONE') ?: 'local-az';
+$region = getenv('EC2_REGION') ?: 'local-region';
+
+// Get server information
+$serverInfo = [
+    'Server IP' => $_SERVER['SERVER_ADDR'] ?? 'Unknown',
+    'Server Name' => $_SERVER['SERVER_NAME'] ?? 'Unknown',
+    'Server Software' => $_SERVER['SERVER_SOFTWARE'] ?? 'Unknown',
+    'PHP Version' => PHP_VERSION,
+    'Document Root' => $_SERVER['DOCUMENT_ROOT'] ?? 'Unknown',
+];
+
+// Get AWS environment information
+$awsInfo = [
+    'Instance ID' => $instanceId,
+    'Availability Zone' => $availabilityZone,
+    'Region' => $region,
+    'Environment' => APP_ENV,
+];
+
+// Get database status
+$dbStatus = 'Unknown';
+$dbVersion = 'Unknown';
+
+try {
+    // Check if we have a database connection
+    if (isset($pdo)) {
+        $stmt = $pdo->query('SELECT VERSION() as version');
+        $result = $stmt->fetch();
+        $dbVersion = $result['version'] ?? 'Unknown';
+        $dbStatus = 'Connected';
+    } else {
+        $dbStatus = 'Not connected';
+    }
+} catch (PDOException $e) {
+    $dbStatus = 'Error: ' . $e->getMessage();
+}
+
+// Get EFS status
+$efsStatus = 'Unknown';
+$efsPath = '{{ efs_mount_point | default("/mnt/efs") }}';
+
+if (file_exists($efsPath) && is_dir($efsPath)) {
+    $efsStatus = 'Mounted';
+    
+    // Check if we can write to EFS
+    $testFile = $efsPath . '/test-' . time() . '.txt';
+    if (file_put_contents($testFile, 'Test') !== false) {
+        $efsStatus .= ' (Writable)';
+        unlink($testFile);
+    } else {
+        $efsStatus .= ' (Read-only)';
+    }
+} else {
+    $efsStatus = 'Not mounted';
+}
+
+// Get load balancer information
+$loadBalancer = isset($_SERVER['HTTP_X_FORWARDED_FOR']) ? 'Active' : 'Not detected';
+$clientIp = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
+
+// Get WAF information
+$wafStatus = isset($_SERVER['HTTP_X_AMZ_CF_ID']) ? 'Active' : 'Not detected';
+
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><?php echo htmlspecialchars($pageTitle); ?></title>
+    <link rel="stylesheet" href="assets/css/style.css">
+    <link rel="icon" href="favicon.ico" type="image/x-icon">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1><?php echo htmlspecialchars($pageTitle); ?></h1>
+            <p class="subtitle">A secure, scalable, and highly available infrastructure on AWS</p>
+        </header>
+        
+        <main>
+            <section class="info-card">
+                <h2>Instance Information</h2>
+                <div class="instance-badge">
+                    <span class="instance-id"><?php echo htmlspecialchars($instanceId); ?></span>
+                    <span class="az"><?php echo htmlspecialchars($availabilityZone); ?></span>
+                </div>
+                <p class="environment <?php echo strtolower(APP_ENV); ?>"><?php echo htmlspecialchars(APP_ENV); ?> Environment</p>
+            </section>
+            
+            <section class="status-grid">
+                <div class="status-card">
+                    <h3>Web Server</h3>
+                    <div class="status-indicator active">Active</div>
+                    <div class="details">
+                        <p><strong>Software:</strong> <?php echo htmlspecialchars($serverInfo['Server Software']); ?></p>
+                        <p><strong>PHP:</strong> <?php echo htmlspecialchars($serverInfo['PHP Version']); ?></p>
+                    </div>
+                </div>
+                
+                <div class="status-card">
+                    <h3>Database</h3>
+                    <div class="status-indicator <?php echo $dbStatus === 'Connected' ? 'active' : 'inactive'; ?>">
+                        <?php echo htmlspecialchars($dbStatus); ?>
+                    </div>
+                    <div class="details">
+                        <p><strong>Host:</strong> <?php echo htmlspecialchars(DB_HOST); ?></p>
+                        <p><strong>Version:</strong> <?php echo htmlspecialchars($dbVersion); ?></p>
+                        <p><a href="db-test.php">Test Database Connection</a></p>
+                    </div>
+                </div>
+                
+                <div class="status-card">
+                    <h3>EFS Storage</h3>
+                    <div class="status-indicator <?php echo strpos($efsStatus, 'Mounted') !== false ? 'active' : 'inactive'; ?>">
+                        <?php echo htmlspecialchars($efsStatus); ?>
+                    </div>
+                    <div class="details">
+                        <p><strong>Mount Point:</strong> <?php echo htmlspecialchars($efsPath); ?></p>
+                        <p><strong>Uploads Directory:</strong> <a href="uploads/">Browse</a></p>
+                    </div>
+                </div>
+                
+                <div class="status-card">
+                    <h3>Load Balancer</h3>
+                    <div class="status-indicator <?php echo $loadBalancer === 'Active' ? 'active' : 'inactive'; ?>">
+                        <?php echo htmlspecialchars($loadBalancer); ?>
+                    </div>
+                    <div class="details">
+                        <p><strong>Client IP:</strong> <?php echo htmlspecialchars($clientIp); ?></p>
+                    </div>
+                </div>
+            </section>
+            
+            <section class="tools">
+                <h2>Tools & Diagnostics</h2>
+                <div class="tools-grid">
+                    <a href="health.php" class="tool-card">
+                        <h3>Health Check</h3>
+                        <p>View system health status</p>
+                    </a>
+                    
+                    <a href="info.php" class="tool-card">
+                        <h3>PHP Info</h3>
+                        <p>View detailed PHP configuration</p>
+                    </a>
+                    
+                    <a href="db-test.php" class="tool-card">
+                        <h3>Database Test</h3>
+                        <p>Test database connectivity</p>
+                    </a>
+                    
+                    <a href="https://console.aws.amazon.com/" target="_blank" class="tool-card">
+                        <h3>AWS Console</h3>
+                        <p>Open AWS Management Console</p>
+                    </a>
+                </div>
+            </section>
+            
+            <section class="architecture">
+                <h2>Architecture Overview</h2>
+                <div class="architecture-diagram">
+                    <img src="assets/images/architecture.png" alt="Architecture Diagram" onerror="this.style.display='none'">
+                    <div class="architecture-text">
+                        <h3>Components</h3>
+                        <ul>
+                            <li><strong>Web Tier:</strong> Auto Scaling Group with Apache/PHP</li>
+                            <li><strong>Database Tier:</strong> Amazon RDS for MySQL</li>
+                            <li><strong>Storage Tier:</strong> Amazon EFS for shared files</li>
+                            <li><strong>Load Balancing:</strong> Application Load Balancer</li>
+                            <li><strong>Security:</strong> WAF, Security Groups, IAM Roles</li>
+                            <li><strong>Monitoring:</strong> CloudWatch, CloudTrail</li>
+                            <li><strong>DNS:</strong> Route 53</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+        </main>
+        
+        <footer>
+            <p>&copy; <?php echo date('Y'); ?> {{ app_name | default("AWS LAMP Stack") }}. All rights reserved.</p>
+            <p class="version">Version {{ app_version | default('1.0.0') }}</p>
+        </footer>
+    </div>
+    
+    <script src="assets/js/script.js"></script>
+</body>
+</html>

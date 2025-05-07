@@ -1,0 +1,211 @@
+# {{ ansible_managed }}
+# Apache Virtual Host configuration for {{ inventory_hostname }}
+# This file is managed by Ansible - local changes will be overwritten
+
+<VirtualHost *:80>
+    ServerName {{ apache_server_name }}
+    {% if apache_server_alias is defined %}
+    ServerAlias {{ apache_server_alias }}
+    {% endif %}
+    
+    ServerAdmin {{ apache_server_admin | default('webmaster@localhost') }}
+    DocumentRoot {{ apache_document_root }}
+
+    # Access and error logs
+    ErrorLog {{ apache_log_dir }}/error.log
+    CustomLog {{ apache_log_dir }}/access.log combined
+
+    # Directory configuration
+    <Directory {{ apache_document_root }}>
+        Options {{ apache_directory_options | default('FollowSymLinks') }}
+        AllowOverride {{ apache_directory_allow_override | default('All') }}
+        Require all granted
+
+        # Enable .htaccess files if AllowOverride is set to All
+        {% if apache_directory_allow_override | default('All') == 'All' %}
+        <IfModule mod_rewrite.c>
+            RewriteEngine On
+        </IfModule>
+        {% endif %}
+    </Directory>
+
+    # PHP configuration
+    <FilesMatch \.php$>
+        {% if php_fpm_enabled | default(true) | bool %}
+        # PHP-FPM configuration
+        SetHandler "proxy:unix:{{ php_fpm_socket_path }}|fcgi://localhost"
+        {% else %}
+        # PHP module configuration
+        SetHandler application/x-httpd-php
+        {% endif %}
+    </FilesMatch>
+
+    # Security headers
+    <IfModule mod_headers.c>
+        Header always set X-Content-Type-Options "nosniff"
+        Header always set X-Frame-Options "SAMEORIGIN"
+        Header always set X-XSS-Protection "1; mode=block"
+        Header always set Referrer-Policy "strict-origin-when-cross-origin"
+        {% if apache_enable_hsts | default(true) | bool %}
+        Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        {% endif %}
+        {% if apache_content_security_policy is defined %}
+        Header always set Content-Security-Policy "{{ apache_content_security_policy }}"
+        {% endif %}
+    </IfModule>
+
+    # Compression
+    <IfModule mod_deflate.c>
+        AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript application/javascript application/json application/xml
+    </IfModule>
+
+    # Cache control
+    <IfModule mod_expires.c>
+        ExpiresActive On
+        ExpiresByType image/jpg "access plus 1 year"
+        ExpiresByType image/jpeg "access plus 1 year"
+        ExpiresByType image/gif "access plus 1 year"
+        ExpiresByType image/png "access plus 1 year"
+        ExpiresByType image/webp "access plus 1 year"
+        ExpiresByType image/svg+xml "access plus 1 year"
+        ExpiresByType text/css "access plus 1 month"
+        ExpiresByType application/javascript "access plus 1 month"
+        ExpiresByType text/javascript "access plus 1 month"
+        ExpiresByType application/pdf "access plus 1 month"
+        ExpiresByType text/html "access plus 0 seconds"
+    </IfModule>
+
+    # EFS mount point for shared files
+    {% if efs_enabled | default(true) | bool %}
+    Alias /shared {{ efs_mount_point }}/{{ app_name | default('lamp') }}
+    <Directory {{ efs_mount_point }}/{{ app_name | default('lamp') }}>
+        Options FollowSymLinks
+        AllowOverride None
+        Require all granted
+    </Directory>
+    {% endif %}
+
+    # Custom configuration
+    {% if apache_custom_config is defined %}
+    {{ apache_custom_config }}
+    {% endif %}
+
+    # Health check endpoint
+    <Location /health.php>
+        Require all granted
+    </Location>
+</VirtualHost>
+
+{% if apache_enable_ssl | default(true) | bool %}
+<VirtualHost *:443>
+    ServerName {{ apache_server_name }}
+    {% if apache_server_alias is defined %}
+    ServerAlias {{ apache_server_alias }}
+    {% endif %}
+    
+    ServerAdmin {{ apache_server_admin | default('webmaster@localhost') }}
+    DocumentRoot {{ apache_document_root }}
+
+    # SSL configuration
+    SSLEngine on
+    SSLCertificateFile {{ apache_ssl_cert_path }}
+    SSLCertificateKeyFile {{ apache_ssl_key_path }}
+    {% if apache_ssl_chain_path is defined %}
+    SSLCertificateChainFile {{ apache_ssl_chain_path }}
+    {% endif %}
+
+    # SSL protocol and cipher configuration
+    SSLProtocol all -SSLv2 -SSLv3 -TLSv1 -TLSv1.1
+    SSLHonorCipherOrder on
+    SSLCipherSuite ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384
+    SSLCompression off
+    SSLSessionTickets off
+
+    # OCSP Stapling
+    SSLUseStapling on
+    SSLStaplingCache "shmcb:logs/stapling-cache(150000)"
+    SSLStaplingResponseMaxAge 900
+
+    # Access and error logs
+    ErrorLog {{ apache_log_dir }}/ssl-error.log
+    CustomLog {{ apache_log_dir }}/ssl-access.log combined
+
+    # Directory configuration
+    <Directory {{ apache_document_root }}>
+        Options {{ apache_directory_options | default('FollowSymLinks') }}
+        AllowOverride {{ apache_directory_allow_override | default('All') }}
+        Require all granted
+
+        # Enable .htaccess files if AllowOverride is set to All
+        {% if apache_directory_allow_override | default('All') == 'All' %}
+        <IfModule mod_rewrite.c>
+            RewriteEngine On
+        </IfModule>
+        {% endif %}
+    </Directory>
+
+    # PHP configuration
+    <FilesMatch \.php$>
+        {% if php_fpm_enabled | default(true) | bool %}
+        # PHP-FPM configuration
+        SetHandler "proxy:unix:{{ php_fpm_socket_path }}|fcgi://localhost"
+        {% else %}
+        # PHP module configuration
+        SetHandler application/x-httpd-php
+        {% endif %}
+    </FilesMatch>
+
+    # Security headers
+    <IfModule mod_headers.c>
+        Header always set X-Content-Type-Options "nosniff"
+        Header always set X-Frame-Options "SAMEORIGIN"
+        Header always set X-XSS-Protection "1; mode=block"
+        Header always set Referrer-Policy "strict-origin-when-cross-origin"
+        Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        {% if apache_content_security_policy is defined %}
+        Header always set Content-Security-Policy "{{ apache_content_security_policy }}"
+        {% endif %}
+    </IfModule>
+
+    # Compression
+    <IfModule mod_deflate.c>
+        AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript application/javascript application/json application/xml
+    </IfModule>
+
+    # Cache control
+    <IfModule mod_expires.c>
+        ExpiresActive On
+        ExpiresByType image/jpg "access plus 1 year"
+        ExpiresByType image/jpeg "access plus 1 year"
+        ExpiresByType image/gif "access plus 1 year"
+        ExpiresByType image/png "access plus 1 year"
+        ExpiresByType image/webp "access plus 1 year"
+        ExpiresByType image/svg+xml "access plus 1 year"
+        ExpiresByType text/css "access plus 1 month"
+        ExpiresByType application/javascript "access plus 1 month"
+        ExpiresByType text/javascript "access plus 1 month"
+        ExpiresByType application/pdf "access plus 1 month"
+        ExpiresByType text/html "access plus 0 seconds"
+    </IfModule>
+
+    # EFS mount point for shared files
+    {% if efs_enabled | default(true) | bool %}
+    Alias /shared {{ efs_mount_point }}/{{ app_name | default('lamp') }}
+    <Directory {{ efs_mount_point }}/{{ app_name | default('lamp') }}>
+        Options FollowSymLinks
+        AllowOverride None
+        Require all granted
+    </Directory>
+    {% endif %}
+
+    # Custom SSL configuration
+    {% if apache_ssl_custom_config is defined %}
+    {{ apache_ssl_custom_config }}
+    {% endif %}
+
+    # Health check endpoint
+    <Location /health.php>
+        Require all granted
+    </Location>
+</VirtualHost>
+{% endif %}

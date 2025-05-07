@@ -1,0 +1,75 @@
+# {{ ansible_managed }}
+# Log rotation configuration for database client logs
+
+/var/log/db-backup.log {
+    daily
+    rotate {{ db_log_rotation_count | default(14) }}
+    missingok
+    notifempty
+    compress
+    delaycompress
+    create 0644 {{ log_user | default('root') }} {{ log_group | default('root') }}
+    dateext
+    dateformat -%Y%m%d
+    sharedscripts
+    postrotate
+        systemctl reload rsyslog >/dev/null 2>&1 || true
+    endscript
+}
+
+/var/log/db-monitor.log {
+    daily
+    rotate {{ db_log_rotation_count | default(14) }}
+    missingok
+    notifempty
+    compress
+    delaycompress
+    create 0644 {{ log_user | default('root') }} {{ log_group | default('root') }}
+    dateext
+    dateformat -%Y%m%d
+    sharedscripts
+    postrotate
+        systemctl reload rsyslog >/dev/null 2>&1 || true
+    endscript
+}
+
+/var/log/php/db-errors.log {
+    daily
+    rotate {{ db_log_rotation_count | default(14) }}
+    missingok
+    notifempty
+    compress
+    delaycompress
+    create 0644 {{ web_user | default('www-data') }} {{ web_group | default('www-data') }}
+    dateext
+    dateformat -%Y%m%d
+    sharedscripts
+    postrotate
+        systemctl reload php-fpm >/dev/null 2>&1 || true
+        systemctl reload apache2 >/dev/null 2>&1 || true
+    endscript
+}
+
+/var/log/db-backup/* {
+    daily
+    rotate {{ db_log_rotation_count | default(14) }}
+    missingok
+    notifempty
+    compress
+    delaycompress
+    create 0644 {{ log_user | default('root') }} {{ log_group | default('root') }}
+    dateext
+    dateformat -%Y%m%d
+}
+
+/var/log/db-monitor/* {
+    daily
+    rotate {{ db_log_rotation_count | default(14) }}
+    missingok
+    notifempty
+    compress
+    delaycompress
+    create 0644 {{ log_user | default('root') }} {{ log_group | default('root') }}
+    dateext
+    dateformat -%Y%m%d
+}

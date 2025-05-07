@@ -1,0 +1,378 @@
+<?php
+/**
+ * {{ ansible_managed }}
+ * Database Connection Library for {{ inventory_hostname }}
+ * This file is managed by Ansible - local changes will be overwritten
+ */
+
+namespace LAMP\Database;
+
+/**
+ * Database Connection Class
+ * Provides a secure and optimized connection to the MySQL database
+ */
+class Connection {
+    /** @var \PDO|null Database connection instance */
+    private static $instance = null;
+    
+    /** @var array Connection configuration */
+    private static $config = [
+        'host'      => '{{ db_host }}',
+        'port'      => {{ mysql_port | default('3306') }},
+        'dbname'    => '{{ db_name }}',
+        'username'  => '{{ db_user }}',
+        'password'  => '{{ db_password }}',
+        'charset'   => '{{ mysql_charset | default('utf8mb4') }}',
+        'collation' => '{{ mysql_collation | default('utf8mb4_unicode_ci') }}',
+        'prefix'    => '{{ app_db_prefix | default('') }}',
+        'ssl'       => {{ db_ssl_enabled | default(true) | bool | lower }},
+        'ssl_ca'    => '{{ mysql_ssl_ca_path }}',
+        'ssl_verify'=> {{ db_ssl_verify | default(true) | bool | lower }},
+        'persistent'=> {{ db_persistent_connection | default(false) | bool | lower }},
+        'timeout'   => {{ db_connection_timeout | default(10) }},
+        'debug'     => {{ app_db_debug | default(false) | bool | lower }}
+    ];
+    
+    /**
+     * Private constructor to prevent direct instantiation
+     */
+    private function __construct() {
+        // Singleton pattern - prevent direct instantiation
+    }
+    
+    /**
+     * Get database connection instance (singleton pattern)
+     * 
+     * @return \PDO Database connection
+     * @throws \PDOException If connection fails
+     */
+    public static function getInstance() {
+        if (self::$instance === null) {
+            self::connect();
+        }
+        
+        return self::$instance;
+    }
+    
+    /**
+     * Create database connection
+     * 
+     * @return void
+     * @throws \PDOException If connection fails
+     */
+    private static function connect() {
+        $dsn = sprintf(
+            'mysql:host=%s;port=%d;dbname=%s;charset=%s',
+            self::$config['host'],
+            self::$config['port'],
+            self::$config['dbname'],
+            self::$config['charset']
+        );
+        
+        $options = [
+            \PDO::ATTR_ERRMODE            => \PDO::ERRMODE_EXCEPTION,
+            \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC,
+            \PDO::ATTR_EMULATE_PREPARES   => false,
+            \PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES " . self::$config['charset'] . " COLLATE " . self::$config['collation'],
+            \PDO::ATTR_TIMEOUT            => self::$config['timeout'],
+        ];
+        
+        // Set SSL options if enabled
+        if (self::$config['ssl']) {
+            $options[\PDO::MYSQL_ATTR_SSL_CA] = self::$config['ssl_ca'];
+            
+            if (self::$config['ssl_verify']) {
+                $options[\PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT] = true;
+            }
+        }
+        
+        // Set persistent connection if enabled
+        if (self::$config['persistent']) {
+            $options[\PDO::ATTR_PERSISTENT] = true;
+        }
+        
+        try {
+            self::$instance = new \PDO(
+                $dsn,
+                self::$config['username'],
+                self::$config['password'],
+                $options
+            );
+            
+            // Set session variables
+            self::$instance->exec("SET SESSION sql_mode = 'STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'");
+            
+        } catch (\PDOException $e) {
+            // Log error
+            self::logError('Connection failed: ' . $e->getMessage());
+            
+            // Re-throw exception
+            throw $e;
+        }
+    }
+    
+    /**
+     * Close database connection
+     * 
+     * @return void
+     */
+    public static function close() {
+        self::$instance = null;
+    }
+    
+    /**
+     * Get table name with prefix
+     * 
+     * @param string $table Table name
+     * @return string Table name with prefix
+     */
+    public static function getTable($table) {
+        return self::$config['prefix'] . $table;
+    }
+    
+    /**
+     * Log database error
+     * 
+     * @param string $message Error message
+     * @return void
+     */
+    public static function logError($message) {
+        $logFile = '{{ db_error_log_file | default('/var/log/php/db-errors.log') }}';
+        $timestamp = date('Y-m-d H:i:s');
+        $logMessage = sprintf("[%s] [%s] %s\n", $timestamp, self::$config['dbname'], $message);
+        
+        if (is_writable(dirname($logFile))) {
+            file_put_contents($logFile, $logMessage, FILE_APPEND);
+        }
+        
+        if (self::$config['debug']) {
+            error_log('Database Error: ' . $message);
+        }
+    }
+    
+    /**
+     * Execute a query and return the statement
+     * 
+     * @param string $query SQL query
+     * @param array $params Query parameters
+     * @return \PDOStatement|false PDO statement
+     */
+    public static function query($query, $params = []) {
+        try {
+            $db = self::getInstance();
+            $stmt = $db->prepare($query);
+            $stmt->execute($params);
+            return $stmt;
+        } catch (\PDOException $e) {
+            self::logError('Query failed: ' . $e->getMessage() . ' - Query: ' . $query);
+            
+            if (self::$config['debug']) {
+                throw $e;
+            }
+            
+            return false;
+        }
+    }
+    
+    /**
+     * Execute a query and return all rows
+     * 
+     * @param string $query SQL query
+     * @param array $params Query parameters
+     * @return array|false Query results or false on failure
+     */
+    public static function getAll($query, $params = []) {
+        $stmt = self::query($query, $params);
+        
+        if ($stmt) {
+            return $stmt->fetchAll();
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Execute a query and return a single row
+     * 
+     * @param string $query SQL query
+     * @param array $params Query parameters
+     * @return array|false Query result or false on failure
+     */
+    public static function getRow($query, $params = []) {
+        $stmt = self::query($query, $params);
+        
+        if ($stmt) {
+            return $stmt->fetch();
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Execute a query and return a single value
+     * 
+     * @param string $query SQL query
+     * @param array $params Query parameters
+     * @return mixed|false Query result or false on failure
+     */
+    public static function getValue($query, $params = []) {
+        $stmt = self::query($query, $params);
+        
+        if ($stmt) {
+            return $stmt->fetchColumn();
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Execute a query and return the number of affected rows
+     * 
+     * @param string $query SQL query
+     * @param array $params Query parameters
+     * @return int|false Number of affected rows or false on failure
+     */
+    public static function execute($query, $params = []) {
+        $stmt = self::query($query, $params);
+        
+        if ($stmt) {
+            return $stmt->rowCount();
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Begin a transaction
+     * 
+     * @return bool Success
+     */
+    public static function beginTransaction() {
+        try {
+            return self::getInstance()->beginTransaction();
+        } catch (\PDOException $e) {
+            self::logError('Begin transaction failed: ' . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Commit a transaction
+     * 
+     * @return bool Success
+     */
+    public static function commit() {
+        try {
+            return self::getInstance()->commit();
+        } catch (\PDOException $e) {
+            self::logError('Commit transaction failed: ' . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Rollback a transaction
+     * 
+     * @return bool Success
+     */
+    public static function rollback() {
+        try {
+            return self::getInstance()->rollBack();
+        } catch (\PDOException $e) {
+            self::logError('Rollback transaction failed: ' . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Get the last inserted ID
+     * 
+     * @return string|false Last inserted ID or false on failure
+     */
+    public static function lastInsertId() {
+        try {
+            return self::getInstance()->lastInsertId();
+        } catch (\PDOException $e) {
+            self::logError('Get last insert ID failed: ' . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Insert a record into a table
+     * 
+     * @param string $table Table name (without prefix)
+     * @param array $data Associative array of column => value pairs
+     * @return int|false Number of affected rows or false on failure
+     */
+    public static function insert($table, $data) {
+        $table = self::getTable($table);
+        $columns = array_keys($data);
+        $placeholders = array_fill(0, count($columns), '?');
+        
+        $query = sprintf(
+            'INSERT INTO %s (%s) VALUES (%s)',
+            $table,
+            implode(', ', $columns),
+            implode(', ', $placeholders)
+        );
+        
+        return self::execute($query, array_values($data));
+    }
+    
+    /**
+     * Update records in a table
+     * 
+     * @param string $table Table name (without prefix)
+     * @param array $data Associative array of column => value pairs
+     * @param string $where WHERE clause
+     * @param array $params WHERE clause parameters
+     * @return int|false Number of affected rows or false on failure
+     */
+    public static function update($table, $data, $where, $params = []) {
+        $table = self::getTable($table);
+        $set = [];
+        
+        foreach ($data as $column => $value) {
+            $set[] = "$column = ?";
+        }
+        
+        $query = sprintf(
+            'UPDATE %s SET %s WHERE %s',
+            $table,
+            implode(', ', $set),
+            $where
+        );
+        
+        return self::execute($query, array_merge(array_values($data), $params));
+    }
+    
+    /**
+     * Delete records from a table
+     * 
+     * @param string $table Table name (without prefix)
+     * @param string $where WHERE clause
+     * @param array $params WHERE clause parameters
+     * @return int|false Number of affected rows or false on failure
+     */
+    public static function delete($table, $where, $params = []) {
+        $table = self::getTable($table);
+        
+        $query = sprintf(
+            'DELETE FROM %s WHERE %s',
+            $table,
+            $where
+        );
+        
+        return self::execute($query, $params);
+    }
+}
+
+/**
+ * Simple function to get database connection
+ * 
+ * @return \PDO Database connection
+ */
+function db() {
+    return Connection::getInstance();
+}

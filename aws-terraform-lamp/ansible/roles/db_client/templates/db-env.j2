@@ -1,0 +1,69 @@
+# {{ ansible_managed }}
+# Database environment variables for {{ inventory_hostname }}
+# This file is managed by Ansible - local changes will be overwritten
+
+# Database connection settings
+DB_HOST="{{ db_host }}"
+DB_PORT="{{ mysql_port | default('3306') }}"
+DB_NAME="{{ db_name }}"
+DB_USER="{{ db_user }}"
+DB_PASSWORD="{{ db_password }}"
+DB_CHARSET="{{ mysql_charset | default('utf8mb4') }}"
+DB_COLLATION="{{ mysql_collation | default('utf8mb4_unicode_ci') }}"
+
+# SSL configuration
+DB_SSL_ENABLED="{{ db_ssl_enabled | default(true) | bool | lower }}"
+{% if db_ssl_enabled | default(true) | bool %}
+DB_SSL_CA="{{ mysql_ssl_ca_path }}"
+DB_SSL_VERIFY="{{ db_ssl_verify | default(true) | bool | lower }}"
+{% endif %}
+
+# Connection options
+DB_PERSISTENT="{{ db_persistent_connection | default(false) | bool | lower }}"
+DB_TIMEOUT="{{ db_connection_timeout | default(10) }}"
+DB_MAX_CONNECTIONS="{{ db_max_connections | default(100) }}"
+
+# Performance settings
+DB_QUERY_CACHE_SIZE="{{ db_query_cache_size | default('20M') }}"
+DB_QUERY_CACHE_LIMIT="{{ db_query_cache_limit | default('1M') }}"
+DB_QUERY_CACHE_TYPE="{{ db_query_cache_type | default('1') }}"
+DB_QUERY_CACHE_MIN_RES_UNIT="{{ db_query_cache_min_res_unit | default('4K') }}"
+
+# Logging settings
+DB_LOG_ERRORS="{{ db_log_errors | default(true) | bool | lower }}"
+DB_ERROR_LOG_FILE="{{ db_error_log_file | default('/var/log/php/db-errors.log') }}"
+DB_SLOW_QUERY_LOG="{{ db_slow_query_log | default(true) | bool | lower }}"
+DB_SLOW_QUERY_LOG_FILE="{{ db_slow_query_log_file | default('/var/log/mysql/mysql-slow.log') }}"
+DB_LONG_QUERY_TIME="{{ db_long_query_time | default(2) }}"
+
+# Backup settings
+DB_BACKUP_ENABLED="{{ db_backup_enabled | default(true) | bool | lower }}"
+DB_BACKUP_DIR="{{ db_backup_dir }}"
+DB_BACKUP_RETENTION="{{ db_backup_retention | default(30) }}"
+DB_BACKUP_BUCKET="{{ db_backup_bucket | default('') }}"
+DB_BACKUP_PREFIX="{{ db_backup_prefix | default('db-backups') }}"
+DB_BACKUP_HOUR="{{ db_backup_hour | default('3') }}"
+DB_BACKUP_MINUTE="{{ db_backup_minute | default('0') }}"
+
+# Monitoring settings
+DB_MONITORING_ENABLED="{{ db_monitoring_enabled | default(true) | bool | lower }}"
+DB_ALERT_THRESHOLD_CONNECTIONS="{{ db_alert_threshold_connections | default(100) }}"
+DB_ALERT_THRESHOLD_SLOW_QUERIES="{{ db_alert_threshold_slow_queries | default(10) }}"
+DB_ALERT_THRESHOLD_REPLICATION_LAG="{{ db_alert_threshold_replication_lag | default(300) }}"
+
+# AWS settings
+AWS_REGION="{{ aws_region }}"
+{% if db_backup_sns_topic is defined %}
+DB_BACKUP_SNS_TOPIC="{{ db_backup_sns_topic }}"
+{% endif %}
+{% if db_monitor_sns_topic is defined %}
+DB_MONITOR_SNS_TOPIC="{{ db_monitor_sns_topic }}"
+{% endif %}
+{% if db_alarm_sns_topic is defined %}
+DB_ALARM_SNS_TOPIC="{{ db_alarm_sns_topic }}"
+{% endif %}
+
+# Application settings
+APP_DB_PREFIX="{{ app_db_prefix | default('') }}"
+APP_DB_DEBUG="{{ app_db_debug | default(false) | bool | lower }}"
+APP_DB_DISPLAY_ERRORS="{{ db_display_errors | default(false) | bool | lower }}"

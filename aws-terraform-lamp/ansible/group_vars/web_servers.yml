@@ -1,0 +1,250 @@
+---
+# Variables specific to web servers
+# These variables apply to hosts in the web_servers group
+
+# Web server role
+server_role: web
+
+# Apache settings specific to web servers
+apache_server_tokens: "Prod"
+apache_server_signature: "Off"
+apache_trace_enable: "Off"
+apache_keep_alive: "On"
+apache_keep_alive_timeout: 5
+apache_max_keep_alive_requests: 100
+apache_timeout: 60
+apache_max_request_workers: 256
+apache_server_limit: 256
+apache_start_servers: 3
+apache_min_spare_threads: 25
+apache_max_spare_threads: 75
+apache_thread_limit: 64
+apache_threads_per_child: 25
+apache_max_connections_per_child: 0
+apache_listen_backlog: 511
+apache_enable_mpm_event: true
+apache_enable_http2: true
+apache_enable_ssl: true
+apache_enable_mod_security: true
+apache_enable_mod_evasive: true
+apache_enable_mod_headers: true
+apache_enable_mod_expires: true
+apache_enable_mod_deflate: true
+apache_enable_mod_rewrite: true
+
+# PHP-FPM settings
+php_fpm_enabled: true
+php_fpm_pm: "dynamic"
+php_fpm_max_children: 50
+php_fpm_start_servers: 5
+php_fpm_min_spare_servers: 5
+php_fpm_max_spare_servers: 35
+php_fpm_max_requests: 500
+php_fpm_request_terminate_timeout: 60
+php_fpm_process_idle_timeout: 10
+php_fpm_status_path: "/status"
+php_fpm_ping_path: "/ping"
+php_fpm_listen: "127.0.0.1:9000"
+php_fpm_listen_allowed_clients: "127.0.0.1"
+php_fpm_user: "{{ app_user }}"
+php_fpm_group: "{{ app_group }}"
+
+# PHP settings specific to web servers
+php_opcache_enabled: true
+php_opcache_memory_consumption: 128
+php_opcache_interned_strings_buffer: 8
+php_opcache_max_accelerated_files: 4000
+php_opcache_revalidate_freq: 60
+php_opcache_fast_shutdown: true
+php_opcache_enable_cli: false
+php_opcache_validate_timestamps: true
+php_opcache_save_comments: true
+php_opcache_load_comments: true
+
+# PHP additional modules for web servers
+php_additional_modules:
+  - intl
+  - soap
+  - bcmath
+  - fileinfo
+  - exif
+  - imagick
+  - redis
+  - memcached
+
+# CloudWatch agent configuration for web servers
+cloudwatch_logs:
+  - file_path: "/var/log/httpd/access_log"
+    log_group_name: "{{ cloudwatch_log_group }}"
+    log_stream_name: "{instance_id}/apache/access"
+    timestamp_format: "%d/%b/%Y:%H:%M:%S %z"
+    multi_line_start_pattern: "^\\S+"
+  - file_path: "/var/log/httpd/error_log"
+    log_group_name: "{{ cloudwatch_log_group }}"
+    log_stream_name: "{instance_id}/apache/error"
+    timestamp_format: "%a %b %d %H:%M:%S.%f %Y"
+    multi_line_start_pattern: "^\\["
+  - file_path: "/var/log/php-fpm/error.log"
+    log_group_name: "{{ cloudwatch_log_group }}"
+    log_stream_name: "{instance_id}/php-fpm/error"
+    timestamp_format: "%d-%b-%Y %H:%M:%S"
+    multi_line_start_pattern: "^\\["
+  - file_path: "/var/log/php-fpm/www-error.log"
+    log_group_name: "{{ cloudwatch_log_group }}"
+    log_stream_name: "{instance_id}/php-fpm/www-error"
+    timestamp_format: "%d-%b-%Y %H:%M:%S"
+    multi_line_start_pattern: "^\\["
+  - file_path: "{{ app_log_dir }}/*.log"
+    log_group_name: "{{ cloudwatch_log_group }}"
+    log_stream_name: "{instance_id}/app/{file_basename}"
+    timestamp_format: "%Y-%m-%d %H:%M:%S"
+    multi_line_start_pattern: "^\\d{4}-\\d{2}-\\d{2}"
+
+# CloudWatch metrics for web servers
+cloudwatch_metrics:
+  - namespace: "LAMP/WebServer"
+    metrics_collection_interval: 60
+    metrics:
+      - name: "cpu"
+        measurement:
+          - "cpu_usage_idle"
+          - "cpu_usage_iowait"
+          - "cpu_usage_user"
+          - "cpu_usage_system"
+      - name: "disk"
+        measurement:
+          - "disk_used_percent"
+          - "disk_inodes_free"
+      - name: "diskio"
+        measurement:
+          - "diskio_io_time"
+          - "diskio_write_bytes"
+          - "diskio_read_bytes"
+          - "diskio_writes"
+          - "diskio_reads"
+      - name: "mem"
+        measurement:
+          - "mem_used_percent"
+      - name: "swap"
+        measurement:
+          - "swap_used_percent"
+      - name: "net"
+        measurement:
+          - "net_bytes_sent"
+          - "net_bytes_recv"
+          - "net_packets_sent"
+          - "net_packets_recv"
+      - name: "netstat"
+        measurement:
+          - "netstat_tcp_established"
+          - "netstat_tcp_time_wait"
+      - name: "processes"
+        measurement:
+          - "processes_running"
+          - "processes_blocked"
+          - "processes_zombie"
+
+# EFS mount configuration for web servers
+efs_mounts:
+  - mount_point: "{{ efs_mount_point }}"
+    efs_id: "{{ efs_id }}"
+    mount_options: "{{ efs_mount_options }}"
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: "0755"
+    state: "mounted"
+
+# Security settings for web servers
+security_hardening:
+  disable_root_login: true
+  disable_password_authentication: true
+  install_fail2ban: true
+  configure_firewall: true
+  install_rkhunter: true
+  install_lynis: true
+  install_clamav: true
+  enable_automatic_updates: true
+  remove_unused_packages: true
+  disable_unused_services: true
+  set_secure_file_permissions: true
+  configure_auditd: true
+
+# Firewall additional rules for web servers
+firewall_additional_rules:
+  - port: 80
+    protocol: tcp
+    source: "0.0.0.0/0"
+  - port: 443
+    protocol: tcp
+    source: "0.0.0.0/0"
+
+# Web application firewall settings
+mod_security_rules:
+  - "SecRuleEngine On"
+  - "SecRequestBodyAccess On"
+  - "SecResponseBodyAccess On"
+  - "SecResponseBodyMimeType text/plain text/html text/xml application/json"
+  - "SecDefaultAction \"phase:1,log,auditlog,deny,status:403\""
+
+# Cache settings for web servers
+enable_varnish: false
+enable_memcached: false
+enable_redis: false
+
+# SSL/TLS settings
+ssl_protocols: "TLSv1.2 TLSv1.3"
+ssl_ciphers: "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384"
+ssl_prefer_server_ciphers: "on"
+ssl_session_timeout: "1d"
+ssl_session_cache: "shared:SSL:50m"
+ssl_session_tickets: "off"
+ssl_stapling: "on"
+ssl_stapling_verify: "on"
+
+# HTTP headers
+security_headers:
+  - "X-Content-Type-Options: nosniff"
+  - "X-Frame-Options: SAMEORIGIN"
+  - "X-XSS-Protection: 1; mode=block"
+  - "Referrer-Policy: strict-origin-when-cross-origin"
+  - "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'"
+  - "Strict-Transport-Security: max-age=31536000; includeSubDomains; preload"
+
+# Performance settings
+enable_gzip_compression: true
+gzip_comp_level: 6
+gzip_types: "text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript"
+gzip_min_length: 256
+gzip_proxied: "any"
+gzip_vary: "on"
+
+# Browser caching
+browser_caching:
+  - extension: "ico"
+    expires: "1y"
+  - extension: "css"
+    expires: "1y"
+  - extension: "js"
+    expires: "1y"
+  - extension: "gif"
+    expires: "1y"
+  - extension: "jpg"
+    expires: "1y"
+  - extension: "jpeg"
+    expires: "1y"
+  - extension: "png"
+    expires: "1y"
+  - extension: "svg"
+    expires: "1y"
+  - extension: "webp"
+    expires: "1y"
+  - extension: "woff"
+    expires: "1y"
+  - extension: "woff2"
+    expires: "1y"
+  - extension: "ttf"
+    expires: "1y"
+  - extension: "otf"
+    expires: "1y"
+  - extension: "eot"
+    expires: "1y"

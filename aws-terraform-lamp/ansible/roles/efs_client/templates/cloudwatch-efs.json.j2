@@ -1,0 +1,214 @@
+{
+  "agent": {
+    "metrics_collection_interval": 60,
+    "run_as_user": "root"
+  },
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          {
+            "file_path": "/var/log/efs-monitor.log",
+            "log_group_name": "{{ cloudwatch_log_group }}",
+            "log_stream_name": "{{ instance_id }}/efs/monitor",
+            "retention_in_days": {{ cloudwatch_log_retention_days | default(30) }},
+            "timestamp_format": "%Y-%m-%d %H:%M:%S"
+          },
+          {
+            "file_path": "/var/log/efs-backup.log",
+            "log_group_name": "{{ cloudwatch_log_group }}",
+            "log_stream_name": "{{ instance_id }}/efs/backup",
+            "retention_in_days": {{ cloudwatch_log_retention_days | default(30) }},
+            "timestamp_format": "%Y-%m-%d %H:%M:%S"
+          }
+        ]
+      }
+    },
+    "force_flush_interval": 15
+  },
+  "metrics": {
+    "namespace": "EFSMonitoring",
+    "metrics_collected": {
+      "disk": {
+        "resources": [
+          "{{ efs_mount_point }}"
+        ],
+        "measurement": [
+          "used_percent",
+          "used",
+          "total",
+          "free"
+        ],
+        "metrics_collection_interval": 60
+      },
+      "diskio": {
+        "resources": [
+          "*"
+        ],
+        "measurement": [
+          "reads",
+          "writes",
+          "read_bytes",
+          "write_bytes",
+          "read_time",
+          "write_time",
+          "io_time"
+        ],
+        "metrics_collection_interval": 60
+      },
+      "mem": {
+        "measurement": [
+          "mem_used_percent",
+          "mem_available_percent"
+        ],
+        "metrics_collection_interval": 60
+      },
+      "net": {
+        "resources": [
+          "*"
+        ],
+        "measurement": [
+          "bytes_sent",
+          "bytes_recv",
+          "packets_sent",
+          "packets_recv",
+          "drop_in",
+          "drop_out",
+          "err_in",
+          "err_out"
+        ],
+        "metrics_collection_interval": 60
+      },
+      "netstat": {
+        "measurement": [
+          "tcp_established",
+          "tcp_time_wait",
+          "tcp_close_wait"
+        ],
+        "metrics_collection_interval": 60
+      },
+      "processes": {
+        "measurement": [
+          "running",
+          "blocked",
+          "zombies"
+        ],
+        "metrics_collection_interval": 60
+      },
+      "cpu": {
+        "resources": [
+          "*"
+        ],
+        "measurement": [
+          "usage_active",
+          "usage_idle",
+          "usage_iowait",
+          "usage_steal",
+          "usage_system",
+          "usage_user"
+        ],
+        "totalcpu": true,
+        "metrics_collection_interval": 60
+      }
+    },
+    "append_dimensions": {
+      "InstanceId": "${aws:InstanceId}",
+      "InstanceType": "${aws:InstanceType}",
+      "AutoScalingGroupName": "${aws:AutoScalingGroupName}",
+      "EfsId": "{{ efs_id }}",
+      "Environment": "{{ environment | default('production') }}"
+    },
+    "aggregation_dimensions": [
+      ["InstanceId"],
+      ["AutoScalingGroupName"],
+      ["InstanceType"],
+      ["EfsId"],
+      ["Environment"]
+    ]
+  },
+  "alarms": {
+    "efs_disk_usage_high": {
+      "alarm_name": "EFS-DiskUsageHigh-{{ efs_id }}",
+      "alarm_description": "EFS disk usage is above 85%",
+      "comparison_operator": "GreaterThanThreshold",
+      "evaluation_periods": 3,
+      "metric_name": "EfsDiskUsage",
+      "namespace": "EFSMonitoring",
+      "period": 300,
+      "statistic": "Average",
+      "threshold": 85,
+      "treat_missing_data": "notBreaching",
+      "dimensions": {
+        "EfsId": "{{ efs_id }}"
+      },
+      "alarm_actions": [
+        {% if efs_alarm_sns_topic is defined %}
+        "{{ efs_alarm_sns_topic }}"
+        {% endif %}
+      ]
+    },
+    "efs_not_mounted": {
+      "alarm_name": "EFS-NotMounted-{{ efs_id }}",
+      "alarm_description": "EFS is not mounted",
+      "comparison_operator": "LessThanThreshold",
+      "evaluation_periods": 1,
+      "metric_name": "EfsMounted",
+      "namespace": "EFSMonitoring",
+      "period": 300,
+      "statistic": "Minimum",
+      "threshold": 1,
+      "treat_missing_data": "breaching",
+      "dimensions": {
+        "EfsId": "{{ efs_id }}",
+        "InstanceId": "${aws:InstanceId}"
+      },
+      "alarm_actions": [
+        {% if efs_alarm_sns_topic is defined %}
+        "{{ efs_alarm_sns_topic }}"
+        {% endif %}
+      ]
+    },
+    "efs_high_iops": {
+      "alarm_name": "EFS-HighIOPS-{{ efs_id }}",
+      "alarm_description": "EFS IOPS is above threshold",
+      "comparison_operator": "GreaterThanThreshold",
+      "evaluation_periods": 3,
+      "metric_name": "EfsHighIOPSAlarm",
+      "namespace": "EFSMonitoring",
+      "period": 300,
+      "statistic": "Maximum",
+      "threshold": 0,
+      "treat_missing_data": "notBreaching",
+      "dimensions": {
+        "EfsId": "{{ efs_id }}",
+        "InstanceId": "${aws:InstanceId}"
+      },
+      "alarm_actions": [
+        {% if efs_alarm_sns_topic is defined %}
+        "{{ efs_alarm_sns_topic }}"
+        {% endif %}
+      ]
+    },
+    "efs_high_throughput": {
+      "alarm_name": "EFS-HighThroughput-{{ efs_id }}",
+      "alarm_description": "EFS throughput is above threshold",
+      "comparison_operator": "GreaterThanThreshold",
+      "evaluation_periods": 3,
+      "metric_name": "EfsHighThroughputAlarm",
+      "namespace": "EFSMonitoring",
+      "period": 300,
+      "statistic": "Maximum",
+      "threshold": 0,
+      "treat_missing_data": "notBreaching",
+      "dimensions": {
+        "EfsId": "{{ efs_id }}",
+        "InstanceId": "${aws:InstanceId}"
+      },
+      "alarm_actions": [
+        {% if efs_alarm_sns_topic is defined %}
+        "{{ efs_alarm_sns_topic }}"
+        {% endif %}
+      ]
+    }
+  }
+}

@@ -1,0 +1,396 @@
+---
+# Common role tasks
+# These tasks are applied to all servers
+
+- name: Gather facts about the system
+  setup:
+    gather_subset:
+      - hardware
+      - network
+      - virtual
+  tags: always
+
+- name: Set OS family specific variables
+  include_vars: "{{ item }}"
+  with_first_found:
+    - "{{ ansible_os_family | lower }}.yml"
+    - "default.yml"
+  tags: always
+
+- name: Update package cache
+  package:
+    update_cache: yes
+  tags: 
+    - packages
+    - security
+
+- name: Upgrade all packages
+  package:
+    name: '*'
+    state: latest
+  when: system_update_enabled | bool
+  tags: 
+    - packages
+    - security
+
+- name: Install common packages
+  package:
+    name: "{{ common_packages }}"
+    state: present
+  vars:
+    common_packages:
+      - vim
+      - curl
+      - wget
+      - unzip
+      - git
+      - htop
+      - ntp
+      - chrony
+      - python3
+      - python3-pip
+      - jq
+      - net-tools
+      - tcpdump
+      - traceroute
+      - bind-utils
+      - lsof
+      - rsync
+      - tar
+      - zip
+      - logrotate
+      - ca-certificates
+      - openssl
+  tags: packages
+
+- name: Install AWS CLI
+  block:
+    - name: Download AWS CLI installer
+      get_url:
+        url: https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip
+        dest: /tmp/awscliv2.zip
+        mode: '0644'
+      
+    - name: Create directory for AWS CLI
+      file:
+        path: /tmp/aws-cli
+        state: directory
+        mode: '0755'
+      
+    - name: Extract AWS CLI
+      unarchive:
+        src: /tmp/awscliv2.zip
+        dest: /tmp/aws-cli
+        remote_src: yes
+      
+    - name: Install AWS CLI
+      command: /tmp/aws-cli/aws/install
+      args:
+        creates: /usr/local/bin/aws
+      
+    - name: Clean up AWS CLI installation files
+      file:
+        path: "{{ item }}"
+        state: absent
+      with_items:
+        - /tmp/awscliv2.zip
+        - /tmp/aws-cli
+  when: not skip_aws_dependencies | default(false) | bool
+  tags: aws
+
+- name: Configure timezone
+  timezone:
+    name: "{{ app_timezone | default('UTC') }}"
+  tags: system
+
+- name: Configure NTP
+  block:
+    - name: Install NTP package
+      package:
+        name: "{{ 'ntp' if ansible_os_family == 'Debian' else 'chrony' }}"
+        state: present
+      
+    - name: Configure NTP service
+      template:
+        src: ntp.conf.j2
+        dest: "{{ '/etc/ntp.conf' if ansible_os_family == 'Debian' else '/etc/chrony.conf' }}"
+        owner: root
+        group: root
+        mode: '0644'
+      notify: restart ntp service
+      
+    - name: Enable and start NTP service
+      service:
+        name: "{{ 'ntp' if ansible_os_family == 'Debian' else 'chronyd' }}"
+        state: started
+        enabled: yes
+  tags: system
+
+- name: Configure SSH
+  block:
+    - name: Configure SSH server
+      template:
+        src: sshd_config.j2
+        dest: /etc/ssh/sshd_config
+        owner: root
+        group: root
+        mode: '0600'
+        validate: '/usr/sbin/sshd -t -f %s'
+      notify: restart ssh service
+      
+    - name: Ensure SSH service is enabled and running
+      service:
+        name: "{{ 'ssh' if ansible_os_family == 'Debian' else 'sshd' }}"
+        state: started
+        enabled: yes
+  tags: security
+
+- name: Configure firewall
+  block:
+    - name: Install firewall package
+      package:
+        name: "{{ 'ufw' if ansible_os_family == 'Debian' else 'firewalld' }}"
+        state: present
+      
+    - name: Configure firewall (Debian/Ubuntu)
+      ufw:
+        state: enabled
+        policy: deny
+      when: ansible_os_family == 'Debian'
+      
+    - name: Allow SSH through firewall (Debian/Ubuntu)
+      ufw:
+        rule: allow
+        port: "{{ ssh_port | default('22') }}"
+        proto: tcp
+      when: ansible_os_family == 'Debian'
+      
+    - name: Allow additional ports through firewall (Debian/Ubuntu)
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      with_items: "{{ firewall_allowed_tcp_ports | default([80, 443]) }}"
+      when: ansible_os_family == 'Debian'
+      
+    - name: Configure firewall (RedHat/CentOS)
+      firewalld:
+        service: ssh
+        permanent: yes
+        state: enabled
+      when: ansible_os_family == 'RedHat'
+      
+    - name: Allow additional ports through firewall (RedHat/CentOS)
+      firewalld:
+        port: "{{ item }}/tcp"
+        permanent: yes
+        state: enabled
+      with_items: "{{ firewall_allowed_tcp_ports | default([80, 443]) }}"
+      when: ansible_os_family == 'RedHat'
+      
+    - name: Ensure firewall service is enabled and running
+      service:
+        name: "{{ 'ufw' if ansible_os_family == 'Debian' else 'firewalld' }}"
+        state: started
+        enabled: yes
+  when: firewall_enabled | bool
+  tags: security
+
+- name: Configure SELinux
+  block:
+    - name: Install SELinux packages
+      package:
+        name:
+          - policycoreutils
+          - policycoreutils-python
+          - selinux-policy
+          - selinux-policy-targeted
+          - libselinux-utils
+          - setroubleshoot-server
+          - setools
+          - setools-console
+          - mcstrans
+        state: present
+      
+    - name: Configure SELinux state
+      selinux:
+        policy: targeted
+        state: "{{ selinux_state | default('enforcing') }}"
+  when: ansible_os_family == 'RedHat'
+  tags: security
+
+- name: Configure system limits
+  block:
+    - name: Set file descriptor limits
+      pam_limits:
+        domain: '*'
+        limit_type: "{{ item.limit_type }}"
+        limit_item: "{{ item.limit_item }}"
+        value: "{{ item.value }}"
+      with_items:
+        - { limit_type: soft, limit_item: nofile, value: 65536 }
+        - { limit_type: hard, limit_item: nofile, value: 65536 }
+        - { limit_type: soft, limit_item: nproc, value: 65536 }
+        - { limit_type: hard, limit_item: nproc, value: 65536 }
+      
+    - name: Set sysctl parameters
+      sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        state: present
+        reload: yes
+      with_items:
+        - { name: 'net.ipv4.ip_forward', value: '1' }
+        - { name: 'net.ipv4.conf.all.send_redirects', value: '0' }
+        - { name: 'net.ipv4.conf.default.send_redirects', value: '0' }
+        - { name: 'net.ipv4.tcp_max_syn_backlog', value: '2048' }
+        - { name: 'net.ipv4.tcp_synack_retries', value: '2' }
+        - { name: 'net.ipv4.tcp_syn_retries', value: '5' }
+        - { name: 'net.ipv4.tcp_fin_timeout', value: '15' }
+        - { name: 'net.core.somaxconn', value: '65535' }
+        - { name: 'net.core.netdev_max_backlog', value: '4096' }
+        - { name: 'net.ipv4.tcp_keepalive_time', value: '300' }
+        - { name: 'net.ipv4.tcp_keepalive_probes', value: '5' }
+        - { name: 'net.ipv4.tcp_keepalive_intvl', value: '15' }
+        - { name: 'fs.file-max', value: '2097152' }
+  tags: system
+
+- name: Configure swap
+  block:
+    - name: Check if swap file exists
+      stat:
+        path: /swapfile
+      register: swap_file_check
+      
+    - name: Create swap file
+      command: dd if=/dev/zero of=/swapfile bs=1M count=2048
+      args:
+        creates: /swapfile
+      when: not swap_file_check.stat.exists
+      
+    - name: Set swap file permissions
+      file:
+        path: /swapfile
+        owner: root
+        group: root
+        mode: '0600'
+      when: not swap_file_check.stat.exists
+      
+    - name: Format swap file
+      command: mkswap /swapfile
+      when: not swap_file_check.stat.exists
+      
+    - name: Enable swap
+      command: swapon /swapfile
+      when: not swap_file_check.stat.exists
+      
+    - name: Add swap to fstab
+      mount:
+        name: none
+        src: /swapfile
+        fstype: swap
+        opts: sw
+        state: present
+  when: ansible_swaptotal_mb < 1024
+  tags: system
+
+- name: Configure logrotate
+  block:
+    - name: Ensure logrotate is installed
+      package:
+        name: logrotate
+        state: present
+      
+    - name: Configure logrotate for application logs
+      template:
+        src: logrotate.conf.j2
+        dest: /etc/logrotate.d/application
+        owner: root
+        group: root
+        mode: '0644'
+  tags: system
+
+- name: Create application directories
+  block:
+    - name: Create application log directory
+      file:
+        path: "{{ app_log_dir }}"
+        state: directory
+        owner: "{{ app_user | default('root') }}"
+        group: "{{ app_group | default('root') }}"
+        mode: '0755'
+      
+    - name: Create application cache directory
+      file:
+        path: "{{ app_cache_path }}"
+        state: directory
+        owner: "{{ app_user | default('root') }}"
+        group: "{{ app_group | default('root') }}"
+        mode: '0755'
+      when: app_cache_enabled | bool
+  tags: app
+
+- name: Configure AWS credentials
+  block:
+    - name: Create AWS config directory
+      file:
+        path: /root/.aws
+        state: directory
+        mode: '0700'
+      
+    - name: Configure AWS credentials
+      template:
+        src: aws_credentials.j2
+        dest: /root/.aws/credentials
+        mode: '0600'
+      
+    - name: Configure AWS config
+      template:
+        src: aws_config.j2
+        dest: /root/.aws/config
+        mode: '0600'
+  when: not skip_aws_dependencies | default(false) | bool and aws_access_key is defined and aws_secret_key is defined
+  tags: aws
+
+- name: Configure instance tags
+  block:
+    - name: Get instance ID
+      shell: curl -s http://169.254.169.254/latest/meta-data/instance-id
+      register: instance_id_result
+      changed_when: false
+      
+    - name: Set instance tags
+      command: >
+        aws ec2 create-tags
+        --region {{ aws_region }}
+        --resources {{ instance_id_result.stdout }}
+        --tags Key=Name,Value={{ inventory_hostname }}
+               Key=Environment,Value={{ environment | default('production') }}
+               Key=Role,Value={{ server_role | default('unknown') }}
+               Key=Project,Value={{ project_name | default('aws-terraform-lamp') }}
+      changed_when: true
+  when: not skip_aws_dependencies | default(false) | bool and not is_localstack | default(false) | bool
+  tags: aws
+
+- name: Configure hostname
+  hostname:
+    name: "{{ inventory_hostname }}"
+  tags: system
+
+- name: Configure hosts file
+  template:
+    src: hosts.j2
+    dest: /etc/hosts
+    owner: root
+    group: root
+    mode: '0644'
+  tags: system
+
+- name: Configure motd
+  template:
+    src: motd.j2
+    dest: /etc/motd
+    owner: root
+    group: root
+    mode: '0644'
+  tags: system

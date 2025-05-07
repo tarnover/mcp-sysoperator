@@ -1,0 +1,472 @@
+#!/bin/bash
+# {{ ansible_managed }}
+# Database monitoring script for {{ inventory_hostname }}
+# This script is managed by Ansible - local changes will be overwritten
+
+# Exit on any error
+set -e
+
+# Load environment variables if available
+if [ -f "{{ db_env_file | default('/etc/db-env') }}" ]; then
+    source "{{ db_env_file | default('/etc/db-env') }}"
+fi
+
+# Configuration
+DB_HOST="{{ db_host }}"
+DB_PORT="{{ mysql_port | default('3306') }}"
+DB_NAME="{{ db_name }}"
+DB_USER="{{ db_user }}"
+DB_PASSWORD="{{ db_password }}"
+AWS_REGION="{{ aws_region | default('us-east-1') }}"
+INSTANCE_ID="{{ ansible_ec2_instance_id | default(ansible_hostname) }}"
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+LOG_FILE="/var/log/db-monitor.log"
+LOG_DIR="/var/log/db-monitor"
+CREDENTIALS_FILE="{{ mysql_credentials_file | default('/etc/mysql/credentials/db-credentials.cnf') }}"
+MYSQL_OPTS="--defaults-extra-file=$CREDENTIALS_FILE"
+
+# Thresholds
+THRESHOLD_CONNECTIONS="{{ db_alert_threshold_connections | default(100) }}"
+THRESHOLD_SLOW_QUERIES="{{ db_alert_threshold_slow_queries | default(10) }}"
+THRESHOLD_REPLICATION_LAG="{{ db_alert_threshold_replication_lag | default(300) }}"
+
+{% if db_monitor_sns_topic is defined and db_monitor_sns_topic != "" %}
+MONITOR_SNS_TOPIC="{{ db_monitor_sns_topic }}"
+{% endif %}
+
+{% if db_alarm_sns_topic is defined and db_alarm_sns_topic != "" %}
+ALARM_SNS_TOPIC="{{ db_alarm_sns_topic }}"
+{% endif %}
+
+# Create log entry
+log() {
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1" | tee -a $LOG_FILE
+}
+
+# Send SNS notification
+send_notification() {
+    local subject="$1"
+    local message="$2"
+    local status="$3"
+    local topic="$4"
+    
+    if [ -n "$topic" ]; then
+        log "Sending SNS notification: $subject"
+        aws sns publish \
+            --region $AWS_REGION \
+            --topic-arn $topic \
+            --subject "$subject" \
+            --message "$(cat <<EOF
+Database Monitoring $status
+--------------------------
+Instance: $INSTANCE_ID
+Database: $DB_NAME
+Host: $DB_HOST
+Timestamp: $(date +'%Y-%m-%d %H:%M:%S')
+
+$message
+EOF
+)"
+    else
+        log "SNS notifications not configured. Would have sent: $subject"
+    fi
+}
+
+# Check if log directory exists
+if [ ! -d "$LOG_DIR" ]; then
+    log "Creating log directory: $LOG_DIR"
+    mkdir -p "$LOG_DIR"
+    chmod 755 "$LOG_DIR"
+fi
+
+# Create metrics directory
+METRICS_DIR="$LOG_DIR/metrics"
+if [ ! -d "$METRICS_DIR" ]; then
+    log "Creating metrics directory: $METRICS_DIR"
+    mkdir -p "$METRICS_DIR"
+    chmod 755 "$METRICS_DIR"
+fi
+
+# Function to check database connection
+check_connection() {
+    log "Checking database connection to $DB_HOST:$DB_PORT"
+    
+    if mysql $MYSQL_OPTS -e "SELECT 1" &>/dev/null; then
+        log "Database connection successful"
+        echo "1"
+    else
+        log "ERROR: Database connection failed"
+        send_notification "Database Connection Failed - $DB_NAME" "Unable to connect to database at $DB_HOST:$DB_PORT. Manual intervention required." "ALARM" "{% if db_alarm_sns_topic is defined and db_alarm_sns_topic != "" %}$ALARM_SNS_TOPIC{% endif %}"
+        echo "0"
+    fi
+}
+
+# Function to get database status
+get_status() {
+    log "Getting database status"
+    
+    # Create status file
+    STATUS_FILE="$METRICS_DIR/status_${TIMESTAMP}.txt"
+    
+    # Get status
+    mysql $MYSQL_OPTS -e "SHOW GLOBAL STATUS" > "$STATUS_FILE" 2>/dev/null
+    
+    # Check if status was retrieved successfully
+    if [ $? -eq 0 ]; then
+        log "Database status retrieved successfully"
+        echo "$STATUS_FILE"
+    else
+        log "ERROR: Failed to retrieve database status"
+        echo ""
+    fi
+}
+
+# Function to get database variables
+get_variables() {
+    log "Getting database variables"
+    
+    # Create variables file
+    VARIABLES_FILE="$METRICS_DIR/variables_${TIMESTAMP}.txt"
+    
+    # Get variables
+    mysql $MYSQL_OPTS -e "SHOW GLOBAL VARIABLES" > "$VARIABLES_FILE" 2>/dev/null
+    
+    # Check if variables were retrieved successfully
+    if [ $? -eq 0 ]; then
+        log "Database variables retrieved successfully"
+        echo "$VARIABLES_FILE"
+    else
+        log "ERROR: Failed to retrieve database variables"
+        echo ""
+    fi
+}
+
+# Function to get process list
+get_processes() {
+    log "Getting database process list"
+    
+    # Create process file
+    PROCESS_FILE="$METRICS_DIR/processes_${TIMESTAMP}.txt"
+    
+    # Get process list
+    mysql $MYSQL_OPTS -e "SHOW FULL PROCESSLIST" > "$PROCESS_FILE" 2>/dev/null
+    
+    # Check if process list was retrieved successfully
+    if [ $? -eq 0 ]; then
+        log "Database process list retrieved successfully"
+        echo "$PROCESS_FILE"
+    else
+        log "ERROR: Failed to retrieve database process list"
+        echo ""
+    fi
+}
+
+# Function to get slow queries
+get_slow_queries() {
+    log "Checking for slow queries"
+    
+    # Create slow queries file
+    SLOW_QUERIES_FILE="$METRICS_DIR/slow_queries_${TIMESTAMP}.txt"
+    
+    # Get slow queries count
+    SLOW_QUERIES=$(mysql $MYSQL_OPTS -e "SHOW GLOBAL STATUS LIKE 'Slow_queries'" | grep 'Slow_queries' | awk '{print $2}')
+    
+    # Check if slow queries count was retrieved successfully
+    if [ -n "$SLOW_QUERIES" ]; then
+        log "Found $SLOW_QUERIES slow queries"
+        echo "$SLOW_QUERIES" > "$SLOW_QUERIES_FILE"
+        
+        # Check if slow queries exceed threshold
+        if [ $SLOW_QUERIES -gt $THRESHOLD_SLOW_QUERIES ]; then
+            log "WARNING: Slow queries ($SLOW_QUERIES) exceed threshold ($THRESHOLD_SLOW_QUERIES)"
+            send_notification "Database Slow Queries Alert - $DB_NAME" "Detected $SLOW_QUERIES slow queries, which exceeds the threshold of $THRESHOLD_SLOW_QUERIES. Check the slow query log for details." "WARNING" "{% if db_monitor_sns_topic is defined and db_monitor_sns_topic != "" %}$MONITOR_SNS_TOPIC{% endif %}"
+        fi
+        
+        echo "$SLOW_QUERIES_FILE"
+    else
+        log "ERROR: Failed to retrieve slow queries count"
+        echo ""
+    fi
+}
+
+# Function to get connection count
+get_connections() {
+    log "Checking connection count"
+    
+    # Create connections file
+    CONNECTIONS_FILE="$METRICS_DIR/connections_${TIMESTAMP}.txt"
+    
+    # Get connection count
+    CONNECTIONS=$(mysql $MYSQL_OPTS -e "SHOW GLOBAL STATUS LIKE 'Threads_connected'" | grep 'Threads_connected' | awk '{print $2}')
+    
+    # Check if connection count was retrieved successfully
+    if [ -n "$CONNECTIONS" ]; then
+        log "Found $CONNECTIONS active connections"
+        echo "$CONNECTIONS" > "$CONNECTIONS_FILE"
+        
+        # Check if connections exceed threshold
+        if [ $CONNECTIONS -gt $THRESHOLD_CONNECTIONS ]; then
+            log "WARNING: Active connections ($CONNECTIONS) exceed threshold ($THRESHOLD_CONNECTIONS)"
+            send_notification "Database Connections Alert - $DB_NAME" "Detected $CONNECTIONS active connections, which exceeds the threshold of $THRESHOLD_CONNECTIONS." "WARNING" "{% if db_monitor_sns_topic is defined and db_monitor_sns_topic != "" %}$MONITOR_SNS_TOPIC{% endif %}"
+        fi
+        
+        echo "$CONNECTIONS_FILE"
+    else
+        log "ERROR: Failed to retrieve connection count"
+        echo ""
+    fi
+}
+
+# Function to check replication status (if applicable)
+check_replication() {
+    log "Checking replication status"
+    
+    # Create replication file
+    REPLICATION_FILE="$METRICS_DIR/replication_${TIMESTAMP}.txt"
+    
+    # Check if replication is configured
+    SLAVE_STATUS=$(mysql $MYSQL_OPTS -e "SHOW SLAVE STATUS\G" 2>/dev/null)
+    
+    if [ -n "$SLAVE_STATUS" ]; then
+        log "Replication is configured"
+        echo "$SLAVE_STATUS" > "$REPLICATION_FILE"
+        
+        # Check replication lag
+        SECONDS_BEHIND=$(echo "$SLAVE_STATUS" | grep "Seconds_Behind_Master" | awk '{print $2}')
+        
+        if [ "$SECONDS_BEHIND" = "NULL" ]; then
+            log "ERROR: Replication is not running"
+            send_notification "Database Replication Alert - $DB_NAME" "Replication is not running. Manual intervention required." "ALARM" "{% if db_alarm_sns_topic is defined and db_alarm_sns_topic != "" %}$ALARM_SNS_TOPIC{% endif %}"
+        elif [ $SECONDS_BEHIND -gt $THRESHOLD_REPLICATION_LAG ]; then
+            log "WARNING: Replication lag ($SECONDS_BEHIND seconds) exceeds threshold ($THRESHOLD_REPLICATION_LAG seconds)"
+            send_notification "Database Replication Lag Alert - $DB_NAME" "Replication lag is $SECONDS_BEHIND seconds, which exceeds the threshold of $THRESHOLD_REPLICATION_LAG seconds." "WARNING" "{% if db_monitor_sns_topic is defined and db_monitor_sns_topic != "" %}$MONITOR_SNS_TOPIC{% endif %}"
+        else
+            log "Replication lag is $SECONDS_BEHIND seconds (within threshold)"
+        fi
+        
+        echo "$REPLICATION_FILE"
+    else
+        log "Replication is not configured"
+        echo ""
+    fi
+}
+
+# Function to get table statistics
+get_table_stats() {
+    log "Getting table statistics"
+    
+    # Create table stats file
+    TABLE_STATS_FILE="$METRICS_DIR/table_stats_${TIMESTAMP}.txt"
+    
+    # Get table statistics
+    mysql $MYSQL_OPTS -e "SELECT table_schema, table_name, engine, table_rows, data_length, index_length, data_free FROM information_schema.tables WHERE table_schema = '$DB_NAME' ORDER BY data_length DESC" > "$TABLE_STATS_FILE" 2>/dev/null
+    
+    # Check if table statistics were retrieved successfully
+    if [ $? -eq 0 ]; then
+        log "Table statistics retrieved successfully"
+        echo "$TABLE_STATS_FILE"
+    else
+        log "ERROR: Failed to retrieve table statistics"
+        echo ""
+    fi
+}
+
+# Function to check for long-running queries
+check_long_queries() {
+    log "Checking for long-running queries"
+    
+    # Create long queries file
+    LONG_QUERIES_FILE="$METRICS_DIR/long_queries_${TIMESTAMP}.txt"
+    
+    # Get long-running queries (running for more than 10 seconds)
+    LONG_QUERIES=$(mysql $MYSQL_OPTS -e "SELECT id, user, host, db, command, time, state, info FROM information_schema.processlist WHERE command != 'Sleep' AND time > 10 ORDER BY time DESC" 2>/dev/null)
+    
+    if [ -n "$LONG_QUERIES" ]; then
+        log "Found long-running queries"
+        echo "$LONG_QUERIES" > "$LONG_QUERIES_FILE"
+        
+        # Count long-running queries
+        LONG_QUERY_COUNT=$(echo "$LONG_QUERIES" | grep -v "id" | wc -l)
+        
+        if [ $LONG_QUERY_COUNT -gt 0 ]; then
+            log "WARNING: Found $LONG_QUERY_COUNT long-running queries"
+            send_notification "Database Long-Running Queries Alert - $DB_NAME" "Detected $LONG_QUERY_COUNT queries running for more than 10 seconds." "WARNING" "{% if db_monitor_sns_topic is defined and db_monitor_sns_topic != "" %}$MONITOR_SNS_TOPIC{% endif %}"
+        fi
+        
+        echo "$LONG_QUERIES_FILE"
+    else
+        log "No long-running queries found"
+        echo "No long-running queries found" > "$LONG_QUERIES_FILE"
+        echo "$LONG_QUERIES_FILE"
+    fi
+}
+
+# Function to send metrics to CloudWatch
+send_to_cloudwatch() {
+    log "Sending metrics to CloudWatch"
+    
+    # Check if CloudWatch agent is installed
+    if command -v amazon-cloudwatch-agent-ctl &>/dev/null; then
+        log "CloudWatch agent is installed"
+        
+        # Create CloudWatch metrics file
+        CLOUDWATCH_FILE="$METRICS_DIR/cloudwatch_${TIMESTAMP}.json"
+        
+        # Create CloudWatch metrics JSON
+        cat > "$CLOUDWATCH_FILE" <<EOF
+{
+  "metrics": [
+    {
+      "namespace": "LAMP/Database",
+      "dimensions": [
+        {
+          "name": "InstanceId",
+          "value": "$INSTANCE_ID"
+        },
+        {
+          "name": "DatabaseName",
+          "value": "$DB_NAME"
+        }
+      ],
+      "metrics": [
+        {
+          "name": "Connections",
+          "value": $CONNECTIONS,
+          "unit": "Count",
+          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        },
+        {
+          "name": "SlowQueries",
+          "value": $SLOW_QUERIES,
+          "unit": "Count",
+          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        }
+EOF
+        
+        # Add replication lag if applicable
+        if [ -n "$SECONDS_BEHIND" ] && [ "$SECONDS_BEHIND" != "NULL" ]; then
+            cat >> "$CLOUDWATCH_FILE" <<EOF
+,
+        {
+          "name": "ReplicationLag",
+          "value": $SECONDS_BEHIND,
+          "unit": "Seconds",
+          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        }
+EOF
+        fi
+        
+        # Add long-running queries if applicable
+        if [ -n "$LONG_QUERY_COUNT" ]; then
+            cat >> "$CLOUDWATCH_FILE" <<EOF
+,
+        {
+          "name": "LongRunningQueries",
+          "value": $LONG_QUERY_COUNT,
+          "unit": "Count",
+          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        }
+EOF
+        fi
+        
+        # Close the JSON
+        cat >> "$CLOUDWATCH_FILE" <<EOF
+      ]
+    }
+  ]
+}
+EOF
+        
+        # Send metrics to CloudWatch
+        aws cloudwatch put-metric-data --cli-input-json file://$CLOUDWATCH_FILE --region $AWS_REGION
+        
+        if [ $? -eq 0 ]; then
+            log "Metrics sent to CloudWatch successfully"
+        else
+            log "ERROR: Failed to send metrics to CloudWatch"
+        fi
+    else
+        log "CloudWatch agent is not installed, skipping CloudWatch metrics"
+    fi
+}
+
+# Main monitoring process
+log "Starting database monitoring for $DB_NAME on $DB_HOST"
+
+# Check database connection
+CONNECTION_STATUS=$(check_connection)
+
+if [ "$CONNECTION_STATUS" = "1" ]; then
+    # Get database status
+    STATUS_FILE=$(get_status)
+    
+    # Get database variables
+    VARIABLES_FILE=$(get_variables)
+    
+    # Get process list
+    PROCESS_FILE=$(get_processes)
+    
+    # Get slow queries
+    SLOW_QUERIES_FILE=$(get_slow_queries)
+    
+    # Get connection count
+    CONNECTIONS_FILE=$(get_connections)
+    
+    # Check replication status
+    REPLICATION_FILE=$(check_replication)
+    
+    # Get table statistics
+    TABLE_STATS_FILE=$(get_table_stats)
+    
+    # Check for long-running queries
+    LONG_QUERIES_FILE=$(check_long_queries)
+    
+    # Send metrics to CloudWatch
+    send_to_cloudwatch
+    
+    # Create summary report
+    SUMMARY_FILE="$LOG_DIR/summary_${TIMESTAMP}.txt"
+    
+    cat > "$SUMMARY_FILE" <<EOF
+Database Monitoring Summary
+==========================
+Instance: $INSTANCE_ID
+Database: $DB_NAME
+Host: $DB_HOST
+Timestamp: $(date +'%Y-%m-%d %H:%M:%S')
+
+Connection Status: Connected
+Active Connections: $CONNECTIONS
+Slow Queries: $SLOW_QUERIES
+EOF
+    
+    if [ -n "$SECONDS_BEHIND" ]; then
+        echo "Replication Lag: $SECONDS_BEHIND seconds" >> "$SUMMARY_FILE"
+    else
+        echo "Replication: Not configured" >> "$SUMMARY_FILE"
+    fi
+    
+    if [ -n "$LONG_QUERY_COUNT" ]; then
+        echo "Long-Running Queries: $LONG_QUERY_COUNT" >> "$SUMMARY_FILE"
+    else
+        echo "Long-Running Queries: 0" >> "$SUMMARY_FILE"
+    fi
+    
+    log "Monitoring completed successfully"
+    
+    # Send monitoring report
+    {% if db_monitor_sns_topic is defined and db_monitor_sns_topic != "" %}
+    if [ "$(date +%H)" = "00" ] && [ "$(date +%M)" -lt "5" ]; then
+        # Send daily report at midnight
+        send_notification "Database Daily Monitoring Report - $DB_NAME" "$(cat $SUMMARY_FILE)" "REPORT" "$MONITOR_SNS_TOPIC"
+    fi
+    {% endif %}
+else
+    log "Monitoring failed due to connection error"
+fi
+
+# Clean up old monitoring files (keep for 7 days)
+find "$LOG_DIR" -type f -mtime +7 -delete
+
+log "Monitoring process completed"
+exit 0

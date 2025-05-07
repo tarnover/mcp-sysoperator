@@ -1,0 +1,138 @@
+#!/bin/bash
+# {{ ansible_managed }}
+# Database backup script for {{ inventory_hostname }}
+# This script is managed by Ansible - local changes will be overwritten
+
+# Exit on any error
+set -e
+
+# Load environment variables if available
+if [ -f "{{ db_env_file | default('/etc/db-env') }}" ]; then
+    source "{{ db_env_file | default('/etc/db-env') }}"
+fi
+
+# Configuration
+DB_HOST="{{ db_host }}"
+DB_PORT="{{ mysql_port | default('3306') }}"
+DB_NAME="{{ db_name }}"
+DB_USER="{{ db_user }}"
+DB_PASSWORD="{{ db_password }}"
+BACKUP_DIR="{{ db_backup_dir }}"
+BACKUP_RETENTION="{{ db_backup_retention | default(30) }}"
+BACKUP_BUCKET="{{ db_backup_bucket | default('') }}"
+BACKUP_PREFIX="{{ db_backup_prefix | default('db-backups') }}"
+AWS_REGION="{{ aws_region | default('us-east-1') }}"
+INSTANCE_ID="{{ ansible_ec2_instance_id | default(ansible_hostname) }}"
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+LOG_FILE="/var/log/db-backup.log"
+CREDENTIALS_FILE="{{ mysql_credentials_file | default('/etc/mysql/credentials/db-credentials.cnf') }}"
+MYSQLDUMP_OPTS="--defaults-extra-file=$CREDENTIALS_FILE --single-transaction --quick --lock-tables=false"
+
+{% if db_backup_sns_topic is defined and db_backup_sns_topic != "" %}
+SNS_TOPIC="{{ db_backup_sns_topic }}"
+{% endif %}
+
+# Create log entry
+log() {
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1" | tee -a $LOG_FILE
+}
+
+# Send SNS notification
+send_notification() {
+    local subject="$1"
+    local message="$2"
+    local status="$3"
+    
+    {% if db_backup_sns_topic is defined and db_backup_sns_topic != "" %}
+    log "Sending SNS notification: $subject"
+    aws sns publish \
+        --region $AWS_REGION \
+        --topic-arn $SNS_TOPIC \
+        --subject "$subject" \
+        --message "$(cat <<EOF
+Database Backup $status
+-----------------------
+Instance: $INSTANCE_ID
+Database: $DB_NAME
+Host: $DB_HOST
+Timestamp: $(date +'%Y-%m-%d %H:%M:%S')
+Backup File: $BACKUP_FILE
+Backup Size: $(du -h $BACKUP_FILE 2>/dev/null | cut -f1 || echo "N/A")
+
+$message
+EOF
+)"
+    {% else %}
+    log "SNS notifications not configured. Would have sent: $subject"
+    {% endif %}
+}
+
+# Check if backup directory exists
+if [ ! -d "$BACKUP_DIR" ]; then
+    log "Creating backup directory: $BACKUP_DIR"
+    mkdir -p "$BACKUP_DIR"
+    chmod 750 "$BACKUP_DIR"
+fi
+
+# Set backup filename
+BACKUP_FILE="$BACKUP_DIR/${DB_NAME}_${TIMESTAMP}.sql.gz"
+S3_KEY="${BACKUP_PREFIX}/${INSTANCE_ID}/${DB_NAME}_${TIMESTAMP}.sql.gz"
+
+log "Starting database backup for $DB_NAME on $DB_HOST"
+
+# Perform the backup
+if mysqldump $MYSQLDUMP_OPTS $DB_NAME | gzip > "$BACKUP_FILE"; then
+    log "Backup completed successfully: $BACKUP_FILE"
+    chmod 640 "$BACKUP_FILE"
+    
+    # Upload to S3 if bucket is configured
+    if [ -n "$BACKUP_BUCKET" ]; then
+        log "Uploading backup to S3: s3://$BACKUP_BUCKET/$S3_KEY"
+        if aws s3 cp "$BACKUP_FILE" "s3://$BACKUP_BUCKET/$S3_KEY" --region $AWS_REGION; then
+            log "Upload to S3 completed successfully"
+            send_notification "Database Backup Success - $DB_NAME" "Backup successfully uploaded to S3: s3://$BACKUP_BUCKET/$S3_KEY" "SUCCESS"
+        else
+            log "ERROR: Failed to upload backup to S3"
+            send_notification "Database Backup Warning - $DB_NAME" "Backup created but failed to upload to S3. Manual intervention required." "WARNING"
+        fi
+    else
+        log "S3 bucket not configured, skipping upload"
+        send_notification "Database Backup Success - $DB_NAME" "Backup completed successfully (local only)" "SUCCESS"
+    fi
+else
+    log "ERROR: Backup failed for $DB_NAME"
+    send_notification "Database Backup Failed - $DB_NAME" "Backup operation failed. Manual intervention required." "FAILED"
+    exit 1
+fi
+
+# Clean up old backups
+log "Cleaning up backups older than $BACKUP_RETENTION days"
+find "$BACKUP_DIR" -name "${DB_NAME}_*.sql.gz" -type f -mtime +$BACKUP_RETENTION -delete
+
+# If S3 bucket is configured, clean up old backups in S3
+if [ -n "$BACKUP_BUCKET" ]; then
+    log "Listing S3 backups for cleanup"
+    # Get list of backups older than retention period
+    RETENTION_DATE=$(date -d "-$BACKUP_RETENTION days" +%Y-%m-%d)
+    
+    # List objects and filter by date
+    S3_OBJECTS=$(aws s3 ls "s3://$BACKUP_BUCKET/$BACKUP_PREFIX/$INSTANCE_ID/" --region $AWS_REGION | grep "${DB_NAME}_" | awk '{print $4}')
+    
+    for object in $S3_OBJECTS; do
+        # Extract date from filename (format: dbname_YYYYMMDD-HHMMSS.sql.gz)
+        OBJECT_DATE=$(echo $object | grep -o '[0-9]\{8\}' | head -1)
+        if [ -n "$OBJECT_DATE" ]; then
+            # Convert to YYYY-MM-DD format
+            FORMATTED_DATE="${OBJECT_DATE:0:4}-${OBJECT_DATE:4:2}-${OBJECT_DATE:6:2}"
+            
+            # Compare dates
+            if [[ "$FORMATTED_DATE" < "$RETENTION_DATE" ]]; then
+                log "Deleting old S3 backup: $object"
+                aws s3 rm "s3://$BACKUP_BUCKET/$BACKUP_PREFIX/$INSTANCE_ID/$object" --region $AWS_REGION
+            fi
+        fi
+    done
+fi
+
+log "Backup process completed"
+exit 0

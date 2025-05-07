@@ -1,0 +1,206 @@
+/**
+ * LAMP Stack Demo Application JavaScript
+ * {{ ansible_managed }}
+ */
+
+document.addEventListener('DOMContentLoaded', function() {
+  // Initialize the application
+  initApp();
+  
+  // Set up event listeners
+  setupEventListeners();
+  
+  // Start periodic health checks
+  if ({{ app_enable_health_checks | default('true') }}) {
+    startHealthChecks();
+  }
+});
+
+/**
+ * Initialize the application
+ */
+function initApp() {
+  console.log('LAMP Stack Demo Application initialized');
+  
+  // Display current time
+  updateCurrentTime();
+  setInterval(updateCurrentTime, 1000);
+  
+  // Check if we're behind a load balancer
+  checkLoadBalancer();
+}
+
+/**
+ * Set up event listeners for interactive elements
+ */
+function setupEventListeners() {
+  // Add click event listeners to tool cards for analytics
+  const toolCards = document.querySelectorAll('.tool-card');
+  toolCards.forEach(card => {
+    card.addEventListener('click', function(e) {
+      const toolName = this.querySelector('h3').textContent;
+      console.log(`Tool clicked: ${toolName}`);
+      
+      // If this is an external link, log it
+      if (this.getAttribute('target') === '_blank') {
+        console.log(`Opening external tool: ${toolName}`);
+      }
+    });
+  });
+}
+
+/**
+ * Update the current time display
+ */
+function updateCurrentTime() {
+  const timeElement = document.createElement('div');
+  timeElement.className = 'current-time';
+  
+  const now = new Date();
+  const timeString = now.toLocaleTimeString();
+  const dateString = now.toLocaleDateString();
+  
+  timeElement.textContent = `${dateString} ${timeString}`;
+  
+  // Replace existing time element if it exists
+  const existingTimeElement = document.querySelector('.current-time');
+  if (existingTimeElement) {
+    existingTimeElement.replaceWith(timeElement);
+  } else {
+    // Add it to the footer
+    const footer = document.querySelector('footer');
+    if (footer) {
+      footer.prepend(timeElement);
+    }
+  }
+}
+
+/**
+ * Check if the application is behind a load balancer
+ */
+function checkLoadBalancer() {
+  // This is a simple check based on HTTP headers
+  // In a real application, you might want to make an API call
+  const isLoadBalanced = document.querySelector('.status-card:nth-child(4) .status-indicator').textContent.trim() === 'Active';
+  
+  if (isLoadBalanced) {
+    console.log('Application is running behind a load balancer');
+  } else {
+    console.log('Application is running directly on the server');
+  }
+}
+
+/**
+ * Start periodic health checks
+ */
+function startHealthChecks() {
+  // Perform initial health check
+  performHealthCheck();
+  
+  // Set up periodic health checks
+  setInterval(performHealthCheck, {{ app_health_check_interval | default(60000) }});
+}
+
+/**
+ * Perform a health check by fetching the health.php endpoint
+ */
+function performHealthCheck() {
+  fetch('health.php')
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`Health check failed with status: ${response.status}`);
+      }
+      return response.json();
+    })
+    .then(data => {
+      console.log('Health check result:', data);
+      updateHealthStatus(data);
+    })
+    .catch(error => {
+      console.error('Health check error:', error);
+      // Mark all components as unknown in case of error
+      updateHealthStatus({
+        status: 'unhealthy',
+        components: {
+          web_server: { status: 'unknown' },
+          php: { status: 'unknown' },
+          database: { status: 'unknown' },
+          filesystem: { status: 'unknown' }
+        }
+      });
+    });
+}
+
+/**
+ * Update the UI with health status information
+ */
+function updateHealthStatus(healthData) {
+  // Update overall status
+  const statusClasses = {
+    'healthy': 'active',
+    'degraded': 'warning',
+    'unhealthy': 'inactive',
+    'unknown': 'inactive'
+  };
+  
+  // Update component statuses
+  Object.keys(healthData.components).forEach(component => {
+    const componentData = healthData.components[component];
+    const statusElement = document.querySelector(`.status-card:has(h3:contains("${component}")) .status-indicator`);
+    
+    if (statusElement) {
+      // Remove all status classes
+      statusElement.classList.remove('active', 'warning', 'inactive');
+      
+      // Add the appropriate status class
+      const statusClass = statusClasses[componentData.status] || 'inactive';
+      statusElement.classList.add(statusClass);
+      
+      // Update the text
+      statusElement.textContent = componentData.status.charAt(0).toUpperCase() + componentData.status.slice(1);
+    }
+  });
+}
+
+/**
+ * Utility function to format bytes to a human-readable string
+ */
+function formatBytes(bytes, decimals = 2) {
+  if (bytes === 0) return '0 Bytes';
+  
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+  
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
+/**
+ * Utility function to escape HTML to prevent XSS
+ */
+function escapeHtml(unsafe) {
+  return unsafe
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+// Add a custom contains selector for older browsers
+if (!Element.prototype.matches) {
+  Element.prototype.matches = Element.prototype.msMatchesSelector || Element.prototype.webkitMatchesSelector;
+}
+
+if (!Element.prototype.closest) {
+  Element.prototype.closest = function(s) {
+    var el = this;
+    do {
+      if (el.matches(s)) return el;
+      el = el.parentElement || el.parentNode;
+    } while (el !== null && el.nodeType === 1);
+    return null;
+  };
+}

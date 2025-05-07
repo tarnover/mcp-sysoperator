@@ -1,0 +1,226 @@
+{
+  "agent": {
+    "metrics_collection_interval": 60,
+    "run_as_user": "root",
+    "region": "{{ aws_region | default('us-west-2') }}"
+  },
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          {
+            "file_path": "{{ apache_log_dir | default('/var/log/httpd') }}/access_log",
+            "log_group_name": "/{{ environment | default('production') }}/apache/access",
+            "log_stream_name": "{instance_id}",
+            "retention_in_days": {{ cloudwatch_log_retention_days | default(30) }},
+            "timestamp_format": "%d/%b/%Y:%H:%M:%S %z"
+          },
+          {
+            "file_path": "{{ apache_log_dir | default('/var/log/httpd') }}/error_log",
+            "log_group_name": "/{{ environment | default('production') }}/apache/error",
+            "log_stream_name": "{instance_id}",
+            "retention_in_days": {{ cloudwatch_log_retention_days | default(30) }},
+            "timestamp_format": "%a %b %d %H:%M:%S.%f %Y"
+          },
+          {
+            "file_path": "{{ apache_log_dir | default('/var/log/httpd') }}/{{ apache_server_name | default('vhost') }}-access.log",
+            "log_group_name": "/{{ environment | default('production') }}/apache/vhost-access",
+            "log_stream_name": "{instance_id}",
+            "retention_in_days": {{ cloudwatch_log_retention_days | default(30) }},
+            "timestamp_format": "%d/%b/%Y:%H:%M:%S %z"
+          },
+          {
+            "file_path": "{{ apache_log_dir | default('/var/log/httpd') }}/{{ apache_server_name | default('vhost') }}-error.log",
+            "log_group_name": "/{{ environment | default('production') }}/apache/vhost-error",
+            "log_stream_name": "{instance_id}",
+            "retention_in_days": {{ cloudwatch_log_retention_days | default(30) }},
+            "timestamp_format": "%a %b %d %H:%M:%S.%f %Y"
+          },
+          {
+            "file_path": "{{ apache_log_dir | default('/var/log/httpd') }}/{{ apache_server_name | default('vhost') }}-ssl-access.log",
+            "log_group_name": "/{{ environment | default('production') }}/apache/vhost-ssl-access",
+            "log_stream_name": "{instance_id}",
+            "retention_in_days": {{ cloudwatch_log_retention_days | default(30) }},
+            "timestamp_format": "%d/%b/%Y:%H:%M:%S %z"
+          },
+          {
+            "file_path": "{{ apache_log_dir | default('/var/log/httpd') }}/{{ apache_server_name | default('vhost') }}-ssl-error.log",
+            "log_group_name": "/{{ environment | default('production') }}/apache/vhost-ssl-error",
+            "log_stream_name": "{instance_id}",
+            "retention_in_days": {{ cloudwatch_log_retention_days | default(30) }},
+            "timestamp_format": "%a %b %d %H:%M:%S.%f %Y"
+          },
+          {
+            "file_path": "{{ apache_log_dir | default('/var/log/httpd') }}/php_errors.log",
+            "log_group_name": "/{{ environment | default('production') }}/php/error",
+            "log_stream_name": "{instance_id}",
+            "retention_in_days": {{ cloudwatch_log_retention_days | default(30) }},
+            "timestamp_format": "[%d-%b-%Y %H:%M:%S]"
+          },
+          {
+            "file_path": "/var/log/messages",
+            "log_group_name": "/{{ environment | default('production') }}/system/messages",
+            "log_stream_name": "{instance_id}",
+            "retention_in_days": {{ cloudwatch_log_retention_days | default(30) }},
+            "timestamp_format": "%b %d %H:%M:%S"
+          },
+          {
+            "file_path": "/var/log/secure",
+            "log_group_name": "/{{ environment | default('production') }}/system/secure",
+            "log_stream_name": "{instance_id}",
+            "retention_in_days": {{ cloudwatch_log_retention_days | default(30) }},
+            "timestamp_format": "%b %d %H:%M:%S"
+          },
+          {
+            "file_path": "/var/log/cloud-init.log",
+            "log_group_name": "/{{ environment | default('production') }}/system/cloud-init",
+            "log_stream_name": "{instance_id}",
+            "retention_in_days": {{ cloudwatch_log_retention_days | default(30) }},
+            "timestamp_format": "%Y-%m-%d %H:%M:%S,%f"
+          }
+        ]
+      }
+    },
+    "force_flush_interval": 15
+  },
+  "metrics": {
+    "namespace": "{{ cloudwatch_namespace | default('LAMP/System') }}",
+    "metrics_collected": {
+      "cpu": {
+        "resources": [
+          "*"
+        ],
+        "measurement": [
+          "usage_active",
+          "usage_idle",
+          "usage_system",
+          "usage_user",
+          "usage_iowait"
+        ],
+        "totalcpu": true,
+        "metrics_collection_interval": 60
+      },
+      "disk": {
+        "resources": [
+          "/",
+          "/var",
+          "{{ efs_mount_point | default('/mnt/efs') }}"
+        ],
+        "measurement": [
+          "used_percent",
+          "inodes_free",
+          "inodes_used"
+        ],
+        "metrics_collection_interval": 60,
+        "ignore_file_system_types": [
+          "sysfs", "devtmpfs"
+        ]
+      },
+      "diskio": {
+        "resources": [
+          "*"
+        ],
+        "measurement": [
+          "io_time",
+          "write_bytes",
+          "read_bytes",
+          "writes",
+          "reads"
+        ],
+        "metrics_collection_interval": 60
+      },
+      "mem": {
+        "measurement": [
+          "used_percent",
+          "available",
+          "used",
+          "total"
+        ],
+        "metrics_collection_interval": 60
+      },
+      "net": {
+        "resources": [
+          "eth0"
+        ],
+        "measurement": [
+          "bytes_sent",
+          "bytes_recv",
+          "packets_sent",
+          "packets_recv",
+          "drop_in",
+          "drop_out",
+          "err_in",
+          "err_out"
+        ],
+        "metrics_collection_interval": 60
+      },
+      "netstat": {
+        "measurement": [
+          "tcp_established",
+          "tcp_time_wait",
+          "tcp_close_wait"
+        ],
+        "metrics_collection_interval": 60
+      },
+      "swap": {
+        "measurement": [
+          "used_percent",
+          "free",
+          "used"
+        ],
+        "metrics_collection_interval": 60
+      },
+      "processes": {
+        "measurement": [
+          "running",
+          "blocked",
+          "zombies",
+          "stopped",
+          "sleeping",
+          "total"
+        ],
+        "metrics_collection_interval": 60
+      },
+      "procstat": [
+        {
+          "pattern": "httpd|apache2",
+          "measurement": [
+            "cpu_usage",
+            "memory_rss",
+            "memory_vms",
+            "read_bytes",
+            "write_bytes",
+            "read_count",
+            "write_count"
+          ],
+          "metrics_collection_interval": 60
+        },
+        {
+          "pattern": "php-fpm",
+          "measurement": [
+            "cpu_usage",
+            "memory_rss",
+            "memory_vms",
+            "read_bytes",
+            "write_bytes",
+            "read_count",
+            "write_count"
+          ],
+          "metrics_collection_interval": 60
+        }
+      ]
+    },
+    "append_dimensions": {
+      "InstanceId": "${aws:InstanceId}",
+      "InstanceType": "${aws:InstanceType}",
+      "AutoScalingGroupName": "${aws:AutoScalingGroupName}",
+      "Environment": "{{ environment | default('production') }}"
+    },
+    "aggregation_dimensions": [
+      ["InstanceId"],
+      ["InstanceType"],
+      ["AutoScalingGroupName"],
+      ["Environment"]
+    ]
+  }
+}

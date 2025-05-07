@@ -1,0 +1,297 @@
+---
+# EFS client role tasks
+# These tasks configure the EFS client and mount points
+
+- name: Set OS family specific variables
+  include_vars: "{{ item }}"
+  with_first_found:
+    - "{{ ansible_os_family | lower }}.yml"
+    - "default.yml"
+  tags: always
+
+- name: Install NFS client packages
+  package:
+    name: "{{ nfs_packages }}"
+    state: present
+  vars:
+    nfs_packages:
+      - nfs-utils
+      - nfs-common
+  tags: 
+    - efs
+    - packages
+
+- name: Create EFS mount point directory
+  file:
+    path: "{{ efs_mount_point }}"
+    state: directory
+    owner: "{{ efs_owner | default(app_user) }}"
+    group: "{{ efs_group | default(app_group) }}"
+    mode: '0755'
+  tags: efs
+
+- name: Create application directory on EFS
+  file:
+    path: "{{ efs_mount_point }}/{{ app_name | default('lamp') }}"
+    state: directory
+    owner: "{{ efs_owner | default(app_user) }}"
+    group: "{{ efs_group | default(app_group) }}"
+    mode: '0755'
+  tags: efs
+
+- name: Mount EFS filesystem
+  block:
+    - name: Get EFS mount target IP
+      command: >
+        aws efs describe-mount-targets
+        --file-system-id {{ efs_id }}
+        --region {{ aws_region }}
+      register: efs_mount_targets
+      changed_when: false
+      when: not is_localstack | default(false) | bool
+      
+    - name: Set EFS mount target IP
+      set_fact:
+        efs_mount_target_ip: "{{ (efs_mount_targets.stdout | from_json).MountTargets[0].IpAddress }}"
+      when: not is_localstack | default(false) | bool
+      
+    - name: Set LocalStack EFS mount target IP
+      set_fact:
+        efs_mount_target_ip: "{{ localstack_ip | default('127.0.0.1') }}"
+      when: is_localstack | default(false) | bool
+      
+    - name: Mount EFS filesystem using mount target IP
+      mount:
+        path: "{{ efs_mount_point }}"
+        src: "{{ efs_mount_target_ip }}:/"
+        fstype: nfs4
+        opts: "{{ efs_mount_options | default('nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport') }}"
+        state: mounted
+      when: efs_mount_method | default('ip') == 'ip'
+      
+    - name: Mount EFS filesystem using DNS name
+      mount:
+        path: "{{ efs_mount_point }}"
+        src: "{{ efs_id }}.efs.{{ aws_region }}.amazonaws.com:/"
+        fstype: nfs4
+        opts: "{{ efs_mount_options | default('nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport') }}"
+        state: mounted
+      when: efs_mount_method | default('ip') == 'dns' and not is_localstack | default(false) | bool
+  when: efs_mount_enabled | default(true) | bool
+  tags: efs
+
+- name: Configure EFS mount permissions
+  file:
+    path: "{{ efs_mount_point }}"
+    owner: "{{ efs_owner | default(app_user) }}"
+    group: "{{ efs_group | default(app_group) }}"
+    mode: '0755'
+    recurse: yes
+  when: efs_mount_enabled | default(true) | bool
+  tags: efs
+
+- name: Install amazon-efs-utils
+  block:
+    - name: Install dependencies for amazon-efs-utils
+      package:
+        name:
+          - git
+          - make
+          - rpm-build
+          - python3-pip
+        state: present
+      
+    - name: Clone amazon-efs-utils repository
+      git:
+        repo: https://github.com/aws/efs-utils
+        dest: /tmp/efs-utils
+        version: master
+      
+    - name: Build amazon-efs-utils package (RedHat/CentOS)
+      command: >
+        make rpm
+      args:
+        chdir: /tmp/efs-utils
+      register: build_rpm
+      changed_when: build_rpm.rc == 0
+      when: ansible_os_family == 'RedHat'
+      
+    - name: Install amazon-efs-utils package (RedHat/CentOS)
+      yum:
+        name: /tmp/efs-utils/build/amazon-efs-utils*rpm
+        state: present
+      when: ansible_os_family == 'RedHat'
+      
+    - name: Build amazon-efs-utils package (Debian/Ubuntu)
+      command: >
+        ./build-deb.sh
+      args:
+        chdir: /tmp/efs-utils
+      register: build_deb
+      changed_when: build_deb.rc == 0
+      when: ansible_os_family == 'Debian'
+      
+    - name: Install amazon-efs-utils package (Debian/Ubuntu)
+      apt:
+        deb: /tmp/efs-utils/build/amazon-efs-utils*deb
+        state: present
+      when: ansible_os_family == 'Debian'
+      
+    - name: Install stunnel
+      package:
+        name: stunnel
+        state: present
+      
+    - name: Clean up amazon-efs-utils build files
+      file:
+        path: /tmp/efs-utils
+        state: absent
+  when: efs_utils_enabled | default(true) | bool and not is_localstack | default(false) | bool
+  tags: 
+    - efs
+    - packages
+
+- name: Configure EFS with TLS
+  block:
+    - name: Update efs-utils.conf
+      lineinfile:
+        path: /etc/amazon/efs/efs-utils.conf
+        regexp: "^{{ item.key }} ="
+        line: "{{ item.key }} = {{ item.value }}"
+      with_items:
+        - { key: 'stunnel_debug_enabled', value: 'false' }
+        - { key: 'stunnel_cafile', value: '/etc/amazon/efs/efs-utils.crt' }
+      
+    - name: Mount EFS filesystem with TLS
+      mount:
+        path: "{{ efs_mount_point }}"
+        src: "{{ efs_id }}:/"
+        fstype: efs
+        opts: "{{ efs_tls_mount_options | default('tls,iam') }}"
+        state: mounted
+      when: efs_mount_enabled | default(true) | bool
+  when: efs_utils_enabled | default(true) | bool and efs_tls_enabled | default(true) | bool and not is_localstack | default(false) | bool
+  tags: efs
+
+- name: Configure CloudWatch monitoring for EFS
+  block:
+    - name: Create CloudWatch config for EFS
+      template:
+        src: cloudwatch-efs.json.j2
+        dest: "{{ cloudwatch_agent_config_path }}"
+        owner: root
+        group: root
+        mode: '0644'
+      notify: restart cloudwatch agent
+      
+    - name: Ensure CloudWatch agent service is enabled and running
+      service:
+        name: amazon-cloudwatch-agent
+        state: started
+        enabled: yes
+  when: cloudwatch_enabled | bool and not is_localstack | default(false) | bool
+  tags: 
+    - efs
+    - monitoring
+
+- name: Configure EFS performance monitoring
+  block:
+    - name: Create EFS monitoring script
+      template:
+        src: efs-monitor.sh.j2
+        dest: /usr/local/bin/efs-monitor.sh
+        owner: root
+        group: root
+        mode: '0755'
+      
+    - name: Create EFS monitoring cron job
+      cron:
+        name: "EFS monitoring"
+        minute: "*/5"
+        job: "/usr/local/bin/efs-monitor.sh"
+        user: root
+  when: efs_monitoring_enabled | default(true) | bool and not is_localstack | default(false) | bool
+  tags: 
+    - efs
+    - monitoring
+
+- name: Configure EFS backup
+  block:
+    - name: Create EFS backup script
+      template:
+        src: efs-backup.sh.j2
+        dest: /usr/local/bin/efs-backup.sh
+        owner: root
+        group: root
+        mode: '0755'
+      
+    - name: Create EFS backup cron job
+      cron:
+        name: "EFS backup"
+        hour: "{{ efs_backup_hour | default('2') }}"
+        minute: "{{ efs_backup_minute | default('0') }}"
+        job: "/usr/local/bin/efs-backup.sh"
+        user: root
+  when: efs_backup_enabled | default(true) | bool and not is_localstack | default(false) | bool
+  tags: 
+    - efs
+    - backup
+
+- name: Configure SELinux for EFS
+  block:
+    - name: Set SELinux context for EFS mount
+      command: chcon -R -t httpd_sys_content_t {{ efs_mount_point }}
+      changed_when: false
+      
+    - name: Create SELinux policy for EFS
+      template:
+        src: efs-selinux.te.j2
+        dest: /tmp/efs-selinux.te
+        owner: root
+        group: root
+        mode: '0644'
+      
+    - name: Compile SELinux policy module
+      command: checkmodule -M -m -o /tmp/efs-selinux.mod /tmp/efs-selinux.te
+      changed_when: true
+      
+    - name: Package SELinux policy module
+      command: semodule_package -o /tmp/efs-selinux.pp -m /tmp/efs-selinux.mod
+      changed_when: true
+      
+    - name: Install SELinux policy module
+      command: semodule -i /tmp/efs-selinux.pp
+      changed_when: true
+      
+    - name: Clean up SELinux policy files
+      file:
+        path: "{{ item }}"
+        state: absent
+      with_items:
+        - /tmp/efs-selinux.te
+        - /tmp/efs-selinux.mod
+        - /tmp/efs-selinux.pp
+  when: ansible_os_family == 'RedHat' and ansible_selinux.status == 'enabled'
+  tags: 
+    - efs
+    - security
+
+- name: Configure firewall for EFS
+  block:
+    - name: Allow NFS through firewall (Debian/Ubuntu)
+      ufw:
+        rule: allow
+        port: 2049
+        proto: tcp
+      when: ansible_os_family == 'Debian'
+      
+    - name: Allow NFS through firewall (RedHat/CentOS)
+      firewalld:
+        service: nfs
+        permanent: yes
+        state: enabled
+      when: ansible_os_family == 'RedHat'
+  when: firewall_enabled | bool
+  tags: 
+    - efs
+    - security

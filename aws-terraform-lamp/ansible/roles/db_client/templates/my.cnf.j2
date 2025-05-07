@@ -1,0 +1,105 @@
+# {{ ansible_managed }}
+# MySQL client configuration for {{ inventory_hostname }}
+# This file is managed by Ansible - local changes will be overwritten
+
+[client]
+host = {{ db_host }}
+port = {{ mysql_port | default('3306') }}
+user = {{ db_user }}
+password = {{ db_password }}
+default-character-set = {{ mysql_charset | default('utf8mb4') }}
+
+{% if db_ssl_enabled | default(true) | bool %}
+# SSL Configuration
+ssl = ON
+ssl-verify-server-cert = {{ db_ssl_verify | default(true) | bool | lower }}
+ssl-ca = {{ mysql_ssl_ca_path }}
+{% endif %}
+
+# Connection settings
+connect_timeout = {{ db_connection_timeout | default(10) }}
+max_allowed_packet = 16M
+
+[mysql]
+# MySQL CLI client settings
+prompt = "{{ db_name }}> "
+no-auto-rehash
+show-warnings
+sigint-ignore
+auto-vertical-output = {{ (db_auto_vertical_output | default(false)) | bool | lower }}
+pager = "less -SFX"
+default-character-set = {{ mysql_charset | default('utf8mb4') }}
+
+# History settings
+histignore = "DROP*:CREATE*:ALTER*:TRUNCATE*:DELETE*"
+histignore-re = "^COMMIT$|^ROLLBACK$"
+select-limit = 1000
+
+{% if db_ssl_enabled | default(true) | bool %}
+# SSL Configuration
+ssl = ON
+ssl-verify-server-cert = {{ db_ssl_verify | default(true) | bool | lower }}
+ssl-ca = {{ mysql_ssl_ca_path }}
+{% endif %}
+
+[mysqldump]
+# Dump settings
+quick
+quote-names
+max_allowed_packet = 64M
+default-character-set = {{ mysql_charset | default('utf8mb4') }}
+
+{% if db_ssl_enabled | default(true) | bool %}
+# SSL Configuration
+ssl = ON
+ssl-verify-server-cert = {{ db_ssl_verify | default(true) | bool | lower }}
+ssl-ca = {{ mysql_ssl_ca_path }}
+{% endif %}
+
+# Additional options
+single-transaction
+skip-lock-tables
+add-drop-table
+add-locks
+create-options
+disable-keys
+extended-insert
+skip-add-locks
+skip-comments
+skip-dump-date
+
+[mysqlimport]
+# Import settings
+local
+default-character-set = {{ mysql_charset | default('utf8mb4') }}
+
+{% if db_ssl_enabled | default(true) | bool %}
+# SSL Configuration
+ssl = ON
+ssl-verify-server-cert = {{ db_ssl_verify | default(true) | bool | lower }}
+ssl-ca = {{ mysql_ssl_ca_path }}
+{% endif %}
+
+[mysqlcheck]
+# Check settings
+auto-repair = true
+check-upgrade = true
+optimize = true
+default-character-set = {{ mysql_charset | default('utf8mb4') }}
+
+{% if db_ssl_enabled | default(true) | bool %}
+# SSL Configuration
+ssl = ON
+ssl-verify-server-cert = {{ db_ssl_verify | default(true) | bool | lower }}
+ssl-ca = {{ mysql_ssl_ca_path }}
+{% endif %}
+
+[myisamchk]
+# MyISAM check settings
+key_buffer_size = 128M
+sort_buffer_size = 128M
+read_buffer = 2M
+write_buffer = 2M
+
+[mysqlhotcopy]
+interactive-timeout

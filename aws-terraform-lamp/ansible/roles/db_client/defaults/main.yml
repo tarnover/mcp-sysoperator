@@ -1,0 +1,92 @@
+---
+# DB Client Role Default Variables
+
+# MySQL client configuration
+mysql_client_packages:
+  - mysql-client
+  - python3-mysqldb
+  - python3-pymysql
+  - libmysqlclient-dev
+  - mysql-common
+
+mysql_client_utilities:
+  - percona-toolkit
+  - mytop
+  - innotop
+  - mysqltuner
+
+mysql_credentials_dir: /etc/mysql/credentials
+mysql_credentials_file: "{{ mysql_credentials_dir }}/db-credentials.cnf"
+mysql_port: 3306
+mysql_charset: utf8mb4
+mysql_collation: utf8mb4_unicode_ci
+
+# Database connection settings
+db_host: "{{ rds_endpoint | default('localhost') }}"
+db_name: "{{ rds_db_name | default('lamp_db') }}"
+db_user: "{{ rds_master_username | default('lamp_user') }}"
+db_password: "{{ rds_master_password | default('changeme') }}"
+db_persistent_connection: false
+db_connection_timeout: 10
+db_max_connections: 100
+db_new_link: false
+db_display_errors: false
+db_log_errors: true
+db_error_log_file: /var/log/php/db-errors.log
+
+# SSL configuration
+db_ssl_enabled: true
+db_ssl_verify: true
+mysql_ssl_ca_path: /etc/mysql/ssl/rds-ca-2019-root.pem
+
+# Backup settings
+db_backup_enabled: true
+db_backup_dir: /var/backups/mysql
+db_backup_user: root
+db_backup_group: root
+db_backup_retention: 30
+db_backup_bucket: ""
+db_backup_prefix: db-backups
+db_backup_hour: 3
+db_backup_minute: 0
+db_backup_sns_topic: ""
+
+# Monitoring settings
+db_monitoring_enabled: true
+db_alert_threshold_connections: 100
+db_alert_threshold_slow_queries: 10
+db_alert_threshold_replication_lag: 300
+db_monitor_sns_topic: ""
+db_alarm_sns_topic: ""
+
+# Performance settings
+db_query_cache_size: 20M
+db_query_cache_limit: 1M
+db_query_cache_type: 1
+db_query_cache_min_res_unit: 4K
+db_slow_query_log: true
+db_slow_query_log_file: /var/log/mysql/mysql-slow.log
+db_long_query_time: 2
+
+# CloudWatch settings
+cloudwatch_log_group: "{{ aws_resource_prefix | default('lamp') }}-logs"
+cloudwatch_log_retention_days: 30
+instance_id: "{{ ansible_ec2_instance_id | default(inventory_hostname) }}"
+
+# Web server settings
+web_user: www-data
+web_group: www-data
+web_root: /var/www/html
+app_include_path: /var/www/includes
+app_db_prefix: ""
+app_db_debug: false
+
+# Environment settings
+db_env_file: /etc/db-env
+environment: "{{ env | default('production') }}"
+aws_region: "{{ aws_region | default('us-east-1') }}"
+
+# Log settings
+log_user: root
+log_group: root
+logrotate_db_template: logrotate-db.j2

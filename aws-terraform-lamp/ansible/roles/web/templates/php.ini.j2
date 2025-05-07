@@ -1,0 +1,156 @@
+; {{ ansible_managed }}
+; PHP configuration for {{ inventory_hostname }}
+; This file is managed by Ansible - local changes will be overwritten
+
+[PHP]
+; Basic settings
+engine = On
+short_open_tag = {{ php_short_open_tag | default('Off') }}
+precision = 14
+output_buffering = {{ php_output_buffering | default('4096') }}
+zlib.output_compression = {{ php_zlib_output_compression | default('Off') }}
+implicit_flush = {{ php_implicit_flush | default('Off') }}
+unserialize_callback_func =
+serialize_precision = -1
+disable_functions = {{ php_disable_functions | default('pcntl_alarm,pcntl_fork,pcntl_waitpid,pcntl_wait,pcntl_wifexited,pcntl_wifstopped,pcntl_wifsignaled,pcntl_wifcontinued,pcntl_wexitstatus,pcntl_wtermsig,pcntl_wstopsig,pcntl_signal,pcntl_signal_get_handler,pcntl_signal_dispatch,pcntl_get_last_error,pcntl_strerror,pcntl_sigprocmask,pcntl_sigwaitinfo,pcntl_sigtimedwait,pcntl_exec,pcntl_getpriority,pcntl_setpriority,exec,passthru,shell_exec,system,popen,proc_open,parse_ini_file') }}
+disable_classes =
+zend.enable_gc = On
+zend.exception_ignore_args = On
+zend.exception_string_param_max_len = 0
+
+; Execution time and memory limits
+max_execution_time = {{ php_max_execution_time | default('30') }}
+max_input_time = {{ php_max_input_time | default('60') }}
+memory_limit = {{ php_memory_limit | default('128M') }}
+
+; Error handling and logging
+error_reporting = {{ php_error_reporting | default('E_ALL & ~E_DEPRECATED & ~E_STRICT') }}
+display_errors = {{ php_display_errors | default('Off') }}
+display_startup_errors = {{ php_display_startup_errors | default('Off') }}
+log_errors = {{ php_log_errors | default('On') }}
+log_errors_max_len = {{ php_log_errors_max_len | default('1024') }}
+ignore_repeated_errors = {{ php_ignore_repeated_errors | default('Off') }}
+ignore_repeated_source = {{ php_ignore_repeated_source | default('Off') }}
+report_memleaks = {{ php_report_memleaks | default('On') }}
+error_log = {{ php_error_log | default('/var/log/php/error.log') }}
+
+; Data handling
+variables_order = "GPCS"
+request_order = "GP"
+register_argc_argv = Off
+auto_globals_jit = On
+post_max_size = {{ php_post_max_size | default('8M') }}
+auto_prepend_file =
+auto_append_file =
+default_mimetype = "text/html"
+default_charset = "UTF-8"
+
+; File uploads
+file_uploads = {{ php_file_uploads | default('On') }}
+upload_max_filesize = {{ php_upload_max_filesize | default('2M') }}
+max_file_uploads = {{ php_max_file_uploads | default('20') }}
+
+; Paths and directories
+include_path = ".:/usr/share/php"
+doc_root =
+user_dir =
+enable_dl = Off
+sys_temp_dir = {{ php_sys_temp_dir | default('/tmp') }}
+
+; Dynamic extensions
+extension_dir = "{{ php_extension_dir | default('/usr/lib64/php/modules') }}"
+
+; Module settings
+{% if php_extensions is defined %}
+{% for extension in php_extensions %}
+extension={{ extension }}
+{% endfor %}
+{% endif %}
+
+; Date and time
+date.timezone = {{ php_date_timezone | default('UTC') }}
+
+; Session
+session.save_handler = {{ php_session_save_handler | default('files') }}
+session.save_path = {{ php_session_save_path | default('/var/lib/php/session') }}
+session.use_strict_mode = {{ php_session_use_strict_mode | default('0') }}
+session.use_cookies = {{ php_session_use_cookies | default('1') }}
+session.use_only_cookies = {{ php_session_use_only_cookies | default('1') }}
+session.name = {{ php_session_name | default('PHPSESSID') }}
+session.auto_start = {{ php_session_auto_start | default('0') }}
+session.cookie_lifetime = {{ php_session_cookie_lifetime | default('0') }}
+session.cookie_path = {{ php_session_cookie_path | default('/') }}
+session.cookie_domain = {{ php_session_cookie_domain | default('') }}
+session.cookie_httponly = {{ php_session_cookie_httponly | default('1') }}
+session.cookie_samesite = {{ php_session_cookie_samesite | default('Lax') }}
+session.cookie_secure = {{ php_session_cookie_secure | default('1') }}
+session.serialize_handler = {{ php_session_serialize_handler | default('php') }}
+session.gc_probability = {{ php_session_gc_probability | default('1') }}
+session.gc_divisor = {{ php_session_gc_divisor | default('1000') }}
+session.gc_maxlifetime = {{ php_session_gc_maxlifetime | default('1440') }}
+session.sid_length = {{ php_session_sid_length | default('26') }}
+session.sid_bits_per_character = {{ php_session_sid_bits_per_character | default('5') }}
+session.trans_sid_tags = "a=href,area=href,frame=src,form="
+session.trans_sid_hosts = ""
+
+; Opcache
+{% if php_opcache_enabled | default(true) | bool %}
+[opcache]
+opcache.enable = {{ php_opcache_enable | default('1') }}
+opcache.enable_cli = {{ php_opcache_enable_cli | default('0') }}
+opcache.memory_consumption = {{ php_opcache_memory_consumption | default('128') }}
+opcache.interned_strings_buffer = {{ php_opcache_interned_strings_buffer | default('8') }}
+opcache.max_accelerated_files = {{ php_opcache_max_accelerated_files | default('10000') }}
+opcache.max_wasted_percentage = {{ php_opcache_max_wasted_percentage | default('5') }}
+opcache.use_cwd = {{ php_opcache_use_cwd | default('1') }}
+opcache.validate_timestamps = {{ php_opcache_validate_timestamps | default('1') }}
+opcache.revalidate_freq = {{ php_opcache_revalidate_freq | default('2') }}
+opcache.revalidate_path = {{ php_opcache_revalidate_path | default('0') }}
+opcache.save_comments = {{ php_opcache_save_comments | default('1') }}
+opcache.enable_file_override = {{ php_opcache_enable_file_override | default('0') }}
+opcache.optimization_level = {{ php_opcache_optimization_level | default('0x7FFFBFFF') }}
+opcache.blacklist_filename = {{ php_opcache_blacklist_filename | default('') }}
+opcache.max_file_size = {{ php_opcache_max_file_size | default('0') }}
+opcache.consistency_checks = {{ php_opcache_consistency_checks | default('0') }}
+opcache.force_restart_timeout = {{ php_opcache_force_restart_timeout | default('180') }}
+opcache.error_log = {{ php_opcache_error_log | default('') }}
+opcache.log_verbosity_level = {{ php_opcache_log_verbosity_level | default('1') }}
+opcache.preferred_memory_model = {{ php_opcache_preferred_memory_model | default('') }}
+opcache.protect_memory = {{ php_opcache_protect_memory | default('0') }}
+opcache.restrict_api = {{ php_opcache_restrict_api | default('') }}
+opcache.mmap_base = {{ php_opcache_mmap_base | default('') }}
+opcache.file_cache = {{ php_opcache_file_cache | default('') }}
+opcache.file_cache_only = {{ php_opcache_file_cache_only | default('0') }}
+opcache.file_cache_consistency_checks = {{ php_opcache_file_cache_consistency_checks | default('1') }}
+opcache.file_cache_fallback = {{ php_opcache_file_cache_fallback | default('1') }}
+opcache.huge_code_pages = {{ php_opcache_huge_code_pages | default('0') }}
+opcache.validate_permission = {{ php_opcache_validate_permission | default('0') }}
+opcache.validate_root = {{ php_opcache_validate_root | default('0') }}
+opcache.opt_debug_level = {{ php_opcache_opt_debug_level | default('0') }}
+opcache.preload = {{ php_opcache_preload | default('') }}
+opcache.preload_user = {{ php_opcache_preload_user | default('') }}
+opcache.jit = {{ php_opcache_jit | default('off') }}
+opcache.jit_buffer_size = {{ php_opcache_jit_buffer_size | default('0') }}
+{% endif %}
+
+; MySQL
+[MySQLi]
+mysqli.max_persistent = {{ php_mysqli_max_persistent | default('-1') }}
+mysqli.allow_persistent = {{ php_mysqli_allow_persistent | default('On') }}
+mysqli.max_links = {{ php_mysqli_max_links | default('-1') }}
+mysqli.default_port = {{ php_mysqli_default_port | default('3306') }}
+mysqli.default_socket = {{ php_mysqli_default_socket | default('/var/lib/mysql/mysql.sock') }}
+mysqli.default_host = {{ php_mysqli_default_host | default('') }}
+mysqli.default_user = {{ php_mysqli_default_user | default('') }}
+mysqli.default_pw = {{ php_mysqli_default_pw | default('') }}
+mysqli.reconnect = {{ php_mysqli_reconnect | default('Off') }}
+
+; PDO MySQL
+[Pdo_mysql]
+pdo_mysql.default_socket = {{ php_pdo_mysql_default_socket | default('/var/lib/mysql/mysql.sock') }}
+pdo_mysql.default_charset = {{ php_pdo_mysql_default_charset | default('utf8mb4') }}
+
+; Custom PHP settings
+{% if php_custom_config is defined %}
+{{ php_custom_config }}
+{% endif %}

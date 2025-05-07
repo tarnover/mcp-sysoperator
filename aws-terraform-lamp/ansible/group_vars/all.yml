@@ -1,0 +1,205 @@
+---
+# Global variables for all hosts
+# These variables apply to all hosts in the inventory
+
+# Environment settings
+environment: "{{ environment | default('production') }}"
+app_environment: "{{ app_environment | default(environment) }}"
+
+# AWS region
+aws_region: "{{ aws_region | default('us-east-1') }}"
+
+# Project information
+project_name: "aws-terraform-lamp"
+project_description: "AWS LAMP Stack with Terraform and Ansible"
+project_version: "1.0.0"
+
+# Application settings
+app_name: "AWS LAMP Stack"
+app_version: "1.0.0"
+app_primary_color: "#232F3E"
+app_secondary_color: "#FF9900"
+app_accent_color: "#0073BB"
+app_debug: "{{ app_debug | default(false) }}"
+app_url: "{{ app_url | default('https://' + route53_domain) }}"
+app_timezone: "{{ app_timezone | default('UTC') }}"
+
+# Security settings
+app_key: "{{ app_key | default('') }}"
+app_session_secure: "{{ app_session_secure | default(true) }}"
+app_cookie_secure: "{{ app_cookie_secure | default(true) }}"
+app_cookie_http_only: "{{ app_cookie_http_only | default(true) }}"
+app_cookie_same_site: "{{ app_cookie_same_site | default('Lax') }}"
+
+# Web server settings
+apache_document_root: "{{ apache_document_root | default('/var/www/html') }}"
+apache_server_admin: "{{ apache_server_admin | default('webmaster@example.com') }}"
+apache_server_name: "{{ apache_server_name | default(route53_domain) }}"
+apache_server_alias: "{{ apache_server_alias | default('www.' + route53_domain) }}"
+apache_log_level: "{{ apache_log_level | default('warn') }}"
+apache_log_dir: "{{ apache_log_dir | default('/var/log/httpd') }}"
+apache_ssl_enabled: "{{ apache_ssl_enabled | default(true) }}"
+apache_ssl_cert_path: "{{ apache_ssl_cert_path | default('/etc/ssl/certs/' + route53_domain + '.crt') }}"
+apache_ssl_key_path: "{{ apache_ssl_key_path | default('/etc/ssl/private/' + route53_domain + '.key') }}"
+apache_ssl_chain_path: "{{ apache_ssl_chain_path | default('/etc/ssl/certs/' + route53_domain + '.chain.crt') }}"
+
+# PHP settings
+php_version: "{{ php_version | default('8.1') }}"
+php_memory_limit: "{{ php_memory_limit | default('256M') }}"
+php_max_execution_time: "{{ php_max_execution_time | default(30) }}"
+php_upload_max_filesize: "{{ php_upload_max_filesize | default('64M') }}"
+php_post_max_size: "{{ php_post_max_size | default('64M') }}"
+php_date_timezone: "{{ php_date_timezone | default(app_timezone) }}"
+php_error_reporting: "{{ php_error_reporting | default('E_ALL & ~E_DEPRECATED & ~E_STRICT') }}"
+php_display_errors: "{{ php_display_errors | default('Off') }}"
+php_display_startup_errors: "{{ php_display_startup_errors | default('Off') }}"
+php_log_errors: "{{ php_log_errors | default('On') }}"
+php_error_log: "{{ php_error_log | default(apache_log_dir + '/php_errors.log') }}"
+php_modules:
+  - cli
+  - common
+  - fpm
+  - json
+  - mbstring
+  - mysql
+  - opcache
+  - readline
+  - xml
+  - zip
+  - gd
+  - curl
+
+# Database settings
+db_host: "{{ db_host | default(lookup('aws_ssm', '/lamp/db/host', region=aws_region, aws_profile=aws_profile) | default('localhost')) }}"
+db_port: "{{ db_port | default(3306) }}"
+db_name: "{{ db_name | default('lamp_db') }}"
+db_user: "{{ db_user | default('dbuser') }}"
+db_password: "{{ db_password | default(lookup('aws_ssm', '/lamp/db/password', region=aws_region, aws_profile=aws_profile) | default('dbpassword')) }}"
+db_root_password: "{{ db_root_password | default(lookup('aws_ssm', '/lamp/db/root_password', region=aws_region, aws_profile=aws_profile) | default('rootpassword')) }}"
+db_backup_enabled: "{{ db_backup_enabled | default(true) }}"
+db_backup_dir: "{{ db_backup_dir | default('/var/backups/mysql') }}"
+db_backup_hour: "{{ db_backup_hour | default(3) }}"
+db_backup_minute: "{{ db_backup_minute | default(0) }}"
+db_monitoring_enabled: "{{ db_monitoring_enabled | default(true) }}"
+mysqldump_max_allowed_packet: "{{ mysqldump_max_allowed_packet | default('64M') }}"
+
+# EFS settings
+efs_enabled: "{{ efs_enabled | default(true) }}"
+efs_id: "{{ efs_id | default('') }}"
+efs_mount_point: "{{ efs_mount_point | default('/mnt/efs') }}"
+efs_mount_options: "{{ efs_mount_options | default('tls,iam') }}"
+
+# Route53 settings
+route53_enabled: "{{ route53_enabled | default(true) }}"
+route53_domain: "{{ route53_domain | default('example.com') }}"
+route53_zone_id: "{{ route53_zone_id | default('') }}"
+
+# CloudWatch settings
+cloudwatch_enabled: "{{ cloudwatch_enabled | default(true) }}"
+cloudwatch_log_group: "{{ cloudwatch_log_group | default('/aws/ec2/lamp') }}"
+cloudwatch_log_retention_days: "{{ cloudwatch_log_retention_days | default(30) }}"
+cloudwatch_agent_enabled: "{{ cloudwatch_agent_enabled | default(true) }}"
+cloudwatch_agent_config_path: "{{ cloudwatch_agent_config_path | default('/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json') }}"
+
+# CloudTrail settings
+cloudtrail_enabled: "{{ cloudtrail_enabled | default(true) }}"
+cloudtrail_name: "{{ cloudtrail_name | default('lamp-stack-trail') }}"
+cloudtrail_s3_bucket: "{{ cloudtrail_s3_bucket | default('') }}"
+
+# WAF settings
+waf_enabled: "{{ waf_enabled | default(true) }}"
+waf_acl_id: "{{ waf_acl_id | default('') }}"
+
+# ALB settings
+alb_enabled: "{{ alb_enabled | default(true) }}"
+alb_name: "{{ alb_name | default('lamp-alb') }}"
+alb_dns_name: "{{ alb_dns_name | default('') }}"
+alb_security_group_id: "{{ alb_security_group_id | default('') }}"
+
+# Auto Scaling settings
+asg_enabled: "{{ asg_enabled | default(true) }}"
+asg_name: "{{ asg_name | default('lamp-asg') }}"
+asg_min_size: "{{ asg_min_size | default(2) }}"
+asg_max_size: "{{ asg_max_size | default(10) }}"
+asg_desired_capacity: "{{ asg_desired_capacity | default(2) }}"
+
+# Health check settings
+health_check_path: "{{ health_check_path | default('/health.php') }}"
+health_check_interval: "{{ health_check_interval | default(30) }}"
+health_check_timeout: "{{ health_check_timeout | default(5) }}"
+health_check_healthy_threshold: "{{ health_check_healthy_threshold | default(2) }}"
+health_check_unhealthy_threshold: "{{ health_check_unhealthy_threshold | default(2) }}"
+app_enable_health_checks: "{{ app_enable_health_checks | default(true) }}"
+app_health_check_interval: "{{ app_health_check_interval | default(60000) }}"
+
+# User and group settings
+app_user: "{{ app_user | default('apache') }}"
+app_group: "{{ app_group | default('apache') }}"
+
+# Logging settings
+app_log_enabled: "{{ app_log_enabled | default(true) }}"
+app_log_level: "{{ app_log_level | default('error') }}"
+app_log_dir: "{{ app_log_dir | default('/var/log/app') }}"
+app_log_max_files: "{{ app_log_max_files | default(30) }}"
+
+# Cache settings
+app_cache_enabled: "{{ app_cache_enabled | default(true) }}"
+app_cache_ttl: "{{ app_cache_ttl | default(3600) }}"
+app_cache_path: "{{ app_cache_path | default('/tmp/app_cache') }}"
+
+# Session settings
+app_session_name: "{{ app_session_name | default('LAMP_SESSION') }}"
+app_session_lifetime: "{{ app_session_lifetime | default(7200) }}"
+app_session_path: "{{ app_session_path | default('/') }}"
+app_session_domain: "{{ app_session_domain | default('') }}"
+
+# File upload settings
+app_upload_max_size: "{{ app_upload_max_size | default(10485760) }}"
+app_upload_allowed_types: "{{ app_upload_allowed_types | default('jpg,jpeg,png,gif,pdf,doc,docx,xls,xlsx,zip,txt') }}"
+app_upload_path: "{{ app_upload_path | default('uploads') }}"
+
+# SELinux settings
+selinux_state: "{{ selinux_state | default('enforcing') }}"
+
+# SSH settings
+ssh_port: "{{ ssh_port | default(22) }}"
+ssh_permit_root_login: "{{ ssh_permit_root_login | default('no') }}"
+ssh_password_authentication: "{{ ssh_password_authentication | default('no') }}"
+
+# Firewall settings
+firewall_enabled: "{{ firewall_enabled | default(true) }}"
+firewall_allowed_tcp_ports:
+  - "{{ ssh_port }}"
+  - 80
+  - 443
+
+# System update settings
+system_update_enabled: "{{ system_update_enabled | default(true) }}"
+
+# Monitoring settings
+monitoring_enabled: "{{ monitoring_enabled | default(true) }}"
+
+# Backup settings
+backup_enabled: "{{ backup_enabled | default(true) }}"
+
+# LocalStack testing settings
+skip_aws_dependencies: "{{ skip_aws_dependencies | default(false) }}"
+is_localstack: "{{ is_localstack | default(false) }}"
+
+# Application cron jobs
+app_cron_jobs:
+  - name: "Database backup"
+    minute: "0"
+    hour: "{{ db_backup_hour }}"
+    job: "/usr/local/bin/db-backup.sh > /var/log/db-backup.log 2>&1"
+    user: "root"
+  - name: "Log rotation"
+    minute: "0"
+    hour: "2"
+    job: "find {{ app_log_dir }} -type f -name '*.log.*' -mtime +{{ app_log_max_files }} -delete"
+    user: "root"
+  - name: "Cache cleanup"
+    minute: "30"
+    hour: "1"
+    job: "find {{ app_cache_path }} -type f -mtime +1 -delete"
+    user: "{{ app_user }}"

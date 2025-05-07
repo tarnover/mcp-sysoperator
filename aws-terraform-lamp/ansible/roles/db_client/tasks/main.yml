@@ -1,0 +1,384 @@
+---
+# DB Client Role Tasks
+# This role installs and configures MySQL client and related tools
+
+- name: Install MySQL client packages
+  package:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - mysql-client
+    - python3-mysqldb
+    - python3-pymysql
+    - libmysqlclient-dev
+    - mysql-common
+  become: true
+  tags:
+    - db
+    - packages
+
+- name: Install additional database utilities
+  package:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - percona-toolkit
+    - mytop
+    - innotop
+    - mysqltuner
+  become: true
+  ignore_errors: true  # Some packages might not be available on all distributions
+  tags:
+    - db
+    - packages
+    - utilities
+
+- name: Create MySQL configuration directory
+  file:
+    path: /etc/mysql/conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  become: true
+  tags:
+    - db
+    - config
+
+- name: Create MySQL client configuration file
+  template:
+    src: my.cnf.j2
+    dest: /etc/mysql/conf.d/client.cnf
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+  tags:
+    - db
+    - config
+
+- name: Create database credentials directory
+  file:
+    path: "{{ mysql_credentials_dir | default('/etc/mysql/credentials') }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0750'
+  become: true
+  tags:
+    - db
+    - config
+    - security
+
+- name: Create database credentials file
+  template:
+    src: db-credentials.cnf.j2
+    dest: "{{ mysql_credentials_file | default('/etc/mysql/credentials/db-credentials.cnf') }}"
+    owner: root
+    group: root
+    mode: '0640'
+  become: true
+  tags:
+    - db
+    - config
+    - security
+
+- name: Create database backup directory
+  file:
+    path: "{{ db_backup_dir }}"
+    state: directory
+    owner: "{{ db_backup_user | default('root') }}"
+    group: "{{ db_backup_group | default('root') }}"
+    mode: '0750'
+  become: true
+  tags:
+    - db
+    - backup
+
+- name: Create database backup script
+  template:
+    src: db-backup.sh.j2
+    dest: /usr/local/bin/db-backup.sh
+    owner: root
+    group: root
+    mode: '0755'
+  become: true
+  tags:
+    - db
+    - backup
+
+- name: Create database monitoring script
+  template:
+    src: db-monitor.sh.j2
+    dest: /usr/local/bin/db-monitor.sh
+    owner: root
+    group: root
+    mode: '0755'
+  become: true
+  tags:
+    - db
+    - monitoring
+
+- name: Create log directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ log_user | default('root') }}"
+    group: "{{ log_group | default('root') }}"
+    mode: '0755'
+  loop:
+    - /var/log/db-backup
+    - /var/log/db-monitor
+    - /var/log/php
+  become: true
+  tags:
+    - db
+    - logs
+
+- name: Create log files
+  file:
+    path: "{{ item }}"
+    state: touch
+    owner: "{{ log_user | default('root') }}"
+    group: "{{ log_group | default('root') }}"
+    mode: '0644'
+    modification_time: preserve
+    access_time: preserve
+  loop:
+    - /var/log/db-backup.log
+    - /var/log/db-monitor.log
+    - /var/log/php/db-errors.log
+  become: true
+  tags:
+    - db
+    - logs
+
+- name: Configure log rotation
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop:
+    - { src: "{{ 'logrotate-db.j2' if logrotate_db_template is not defined else logrotate_db_template }}", dest: /etc/logrotate.d/db-client }
+  become: true
+  tags:
+    - db
+    - logs
+
+- name: Install AWS CLI if not already installed
+  block:
+    - name: Check if AWS CLI is installed
+      command: aws --version
+      register: aws_cli_check
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Download AWS CLI installer
+      get_url:
+        url: https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip
+        dest: /tmp/awscliv2.zip
+        mode: '0644'
+      when: aws_cli_check.rc != 0
+      become: true
+
+    - name: Extract AWS CLI installer
+      unarchive:
+        src: /tmp/awscliv2.zip
+        dest: /tmp
+        remote_src: true
+      when: aws_cli_check.rc != 0
+      become: true
+
+    - name: Install AWS CLI
+      command: /tmp/aws/install
+      when: aws_cli_check.rc != 0
+      become: true
+
+    - name: Clean up AWS CLI installer
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /tmp/awscliv2.zip
+        - /tmp/aws
+      when: aws_cli_check.rc != 0
+      become: true
+  tags:
+    - db
+    - aws
+    - backup
+
+- name: Configure CloudWatch Agent for database monitoring
+  block:
+    - name: Check if CloudWatch Agent is installed
+      command: amazon-cloudwatch-agent-ctl -h
+      register: cloudwatch_check
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Download CloudWatch Agent installer
+      get_url:
+        url: https://amazoncloudwatch-agent.s3.amazonaws.com/amazon_linux/amd64/latest/amazon-cloudwatch-agent.rpm
+        dest: /tmp/amazon-cloudwatch-agent.rpm
+        mode: '0644'
+      when: cloudwatch_check.rc != 0 and ansible_os_family == "RedHat"
+      become: true
+
+    - name: Download CloudWatch Agent installer (Debian/Ubuntu)
+      get_url:
+        url: https://amazoncloudwatch-agent.s3.amazonaws.com/debian/amd64/latest/amazon-cloudwatch-agent.deb
+        dest: /tmp/amazon-cloudwatch-agent.deb
+        mode: '0644'
+      when: cloudwatch_check.rc != 0 and ansible_os_family == "Debian"
+      become: true
+
+    - name: Install CloudWatch Agent (RedHat/CentOS)
+      yum:
+        name: /tmp/amazon-cloudwatch-agent.rpm
+        state: present
+      when: cloudwatch_check.rc != 0 and ansible_os_family == "RedHat"
+      become: true
+
+    - name: Install CloudWatch Agent (Debian/Ubuntu)
+      apt:
+        deb: /tmp/amazon-cloudwatch-agent.deb
+      when: cloudwatch_check.rc != 0 and ansible_os_family == "Debian"
+      become: true
+
+    - name: Create CloudWatch Agent configuration directory
+      file:
+        path: /opt/aws/amazon-cloudwatch-agent/etc
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      become: true
+
+    - name: Configure CloudWatch Agent for database monitoring
+      template:
+        src: cloudwatch-db.json.j2
+        dest: /opt/aws/amazon-cloudwatch-agent/etc/db-monitoring.json
+        owner: root
+        group: root
+        mode: '0644'
+      become: true
+      notify: restart cloudwatch agent
+
+    - name: Start CloudWatch Agent
+      command: amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/db-monitoring.json
+      become: true
+  tags:
+    - db
+    - monitoring
+    - cloudwatch
+
+- name: Set up database backup cron job
+  cron:
+    name: "Database backup"
+    minute: "{{ db_backup_minute | default('0') }}"
+    hour: "{{ db_backup_hour | default('3') }}"
+    job: "/usr/local/bin/db-backup.sh > /dev/null 2>&1"
+    user: "{{ db_backup_user | default('root') }}"
+  become: true
+  when: db_backup_enabled | default(true) | bool
+  tags:
+    - db
+    - backup
+    - cron
+
+- name: Set up database monitoring cron job
+  cron:
+    name: "Database monitoring"
+    minute: "*/5"
+    job: "/usr/local/bin/db-monitor.sh > /dev/null 2>&1"
+    user: root
+  become: true
+  when: db_monitoring_enabled | default(true) | bool
+  tags:
+    - db
+    - monitoring
+    - cron
+
+- name: Create PHP include directory
+  file:
+    path: "{{ app_include_path | default('/var/www/includes') }}"
+    state: directory
+    owner: "{{ web_user | default('www-data') }}"
+    group: "{{ web_group | default('www-data') }}"
+    mode: '0750'
+  become: true
+  tags:
+    - db
+    - php
+
+- name: Create PHP database connection library
+  template:
+    src: db-connect.php.j2
+    dest: "{{ app_include_path | default('/var/www/includes') }}/db-connect.php"
+    owner: "{{ web_user | default('www-data') }}"
+    group: "{{ web_group | default('www-data') }}"
+    mode: '0640'
+  become: true
+  tags:
+    - db
+    - php
+
+- name: Create database test script
+  template:
+    src: db-test.php.j2
+    dest: "{{ web_root | default('/var/www/html') }}/db-test.php"
+    owner: "{{ web_user | default('www-data') }}"
+    group: "{{ web_group | default('www-data') }}"
+    mode: '0640'
+  become: true
+  tags:
+    - db
+    - php
+    - test
+
+- name: Create database environment file
+  template:
+    src: db-env.j2
+    dest: "{{ db_env_file | default('/etc/db-env') }}"
+    owner: root
+    group: root
+    mode: '0640'
+  become: true
+  tags:
+    - db
+    - config
+
+- name: Add database environment to system profile
+  lineinfile:
+    path: /etc/profile.d/db-env.sh
+    line: "source {{ db_env_file | default('/etc/db-env') }}"
+    create: true
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+  tags:
+    - db
+    - config
+
+- name: Test database connection
+  command: mysql -h {{ db_host }} -P {{ mysql_port | default('3306') }} -u {{ db_user }} -p{{ db_password }} {{ db_name }} -e "SELECT 1"
+  register: db_connection_test
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  no_log: true
+  tags:
+    - db
+    - test
+
+- name: Display database connection status
+  debug:
+    msg: "Database connection {{ 'successful' if db_connection_test.rc == 0 else 'failed' }}"
+  tags:
+    - db
+    - test

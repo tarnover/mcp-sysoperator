@@ -1,0 +1,303 @@
+---
+# Web role tasks
+# These tasks install and configure Apache and PHP
+
+- name: Set OS family specific variables
+  include_vars: "{{ item }}"
+  with_first_found:
+    - "{{ ansible_os_family | lower }}.yml"
+    - "default.yml"
+  tags: always
+
+- name: Install Apache web server
+  package:
+    name: "{{ apache_package_name }}"
+    state: present
+  notify: restart apache
+  tags: 
+    - apache
+    - packages
+
+- name: Install Apache modules
+  package:
+    name: "{{ apache_modules }}"
+    state: present
+  notify: restart apache
+  tags: 
+    - apache
+    - packages
+
+- name: Install PHP and required modules
+  package:
+    name: "{{ php_packages }}"
+    state: present
+  notify: restart apache
+  tags: 
+    - php
+    - packages
+
+- name: Install additional PHP modules
+  package:
+    name: "{{ php_additional_modules }}"
+    state: present
+  when: php_additional_modules is defined
+  notify: restart apache
+  tags: 
+    - php
+    - packages
+
+- name: Create Apache document root
+  file:
+    path: "{{ apache_document_root }}"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: '0755'
+  tags: apache
+
+- name: Configure Apache
+  template:
+    src: httpd.conf.j2
+    dest: "{{ apache_conf_path }}"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart apache
+  tags: apache
+
+- name: Configure Apache virtual host
+  template:
+    src: vhost.conf.j2
+    dest: "{{ apache_vhost_path }}"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart apache
+  tags: apache
+
+- name: Configure PHP
+  template:
+    src: php.ini.j2
+    dest: "{{ php_ini_path }}"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart php-fpm
+  tags: php
+
+- name: Configure PHP-FPM
+  block:
+    - name: Install PHP-FPM
+      package:
+        name: "{{ php_fpm_package_name }}"
+        state: present
+      
+    - name: Configure PHP-FPM pool
+      template:
+        src: php-fpm-pool.conf.j2
+        dest: "{{ php_fpm_pool_path }}"
+        owner: root
+        group: root
+        mode: '0644'
+      notify: restart php-fpm
+      
+    - name: Enable and start PHP-FPM service
+      service:
+        name: "{{ php_fpm_service_name }}"
+        state: started
+        enabled: yes
+  when: php_fpm_enabled | default(true) | bool
+  tags: php
+
+- name: Create health check script
+  template:
+    src: health.php.j2
+    dest: "{{ apache_document_root }}/health.php"
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: '0644'
+  tags: 
+    - apache
+    - health
+
+- name: Create PHP info script
+  template:
+    src: info.php.j2
+    dest: "{{ apache_document_root }}/info.php"
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: '0644'
+  tags: 
+    - apache
+    - php
+
+- name: Configure mod_security
+  block:
+    - name: Install mod_security
+      package:
+        name: "{{ mod_security_package_name }}"
+        state: present
+      
+    - name: Configure mod_security
+      template:
+        src: mod_security.conf.j2
+        dest: "{{ mod_security_conf_path }}"
+        owner: root
+        group: root
+        mode: '0644'
+      notify: restart apache
+  when: apache_enable_mod_security | default(true) | bool
+  tags: 
+    - apache
+    - security
+
+- name: Configure mod_evasive
+  block:
+    - name: Install mod_evasive
+      package:
+        name: "{{ mod_evasive_package_name }}"
+        state: present
+      
+    - name: Configure mod_evasive
+      template:
+        src: mod_evasive.conf.j2
+        dest: "{{ mod_evasive_conf_path }}"
+        owner: root
+        group: root
+        mode: '0644'
+      notify: restart apache
+  when: apache_enable_mod_evasive | default(true) | bool
+  tags: 
+    - apache
+    - security
+
+- name: Configure SSL
+  block:
+    - name: Install SSL module
+      package:
+        name: "{{ apache_ssl_module_package }}"
+        state: present
+      
+    - name: Create SSL directory
+      file:
+        path: "{{ apache_ssl_cert_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      
+    - name: Generate self-signed SSL certificate
+      command: >
+        openssl req -x509 -nodes -days 365 -newkey rsa:2048
+        -keyout {{ apache_ssl_key_path }}
+        -out {{ apache_ssl_cert_path }}
+        -subj "/C=US/ST=State/L=City/O=Organization/CN={{ apache_server_name }}"
+      args:
+        creates: "{{ apache_ssl_cert_path }}"
+      
+    - name: Set SSL certificate permissions
+      file:
+        path: "{{ item }}"
+        owner: root
+        group: root
+        mode: '0600'
+      with_items:
+        - "{{ apache_ssl_key_path }}"
+        - "{{ apache_ssl_cert_path }}"
+  when: apache_enable_ssl | default(true) | bool
+  tags: 
+    - apache
+    - ssl
+
+- name: Configure CloudWatch logging for Apache and PHP
+  include_tasks: cloudwatch_logs.yml
+  when: cloudwatch_enabled | bool and not is_localstack | default(false) | bool
+  tags: 
+    - apache
+    - php
+    - monitoring
+
+- name: Enable and start Apache service
+  service:
+    name: "{{ apache_service_name }}"
+    state: started
+    enabled: yes
+  tags: apache
+
+- name: Configure firewall for web traffic
+  block:
+    - name: Allow HTTP through firewall (Debian/Ubuntu)
+      ufw:
+        rule: allow
+        port: 80
+        proto: tcp
+      when: ansible_os_family == 'Debian'
+      
+    - name: Allow HTTPS through firewall (Debian/Ubuntu)
+      ufw:
+        rule: allow
+        port: 443
+        proto: tcp
+      when: ansible_os_family == 'Debian' and apache_enable_ssl | default(true) | bool
+      
+    - name: Allow HTTP through firewall (RedHat/CentOS)
+      firewalld:
+        service: http
+        permanent: yes
+        state: enabled
+      when: ansible_os_family == 'RedHat'
+      
+    - name: Allow HTTPS through firewall (RedHat/CentOS)
+      firewalld:
+        service: https
+        permanent: yes
+        state: enabled
+      when: ansible_os_family == 'RedHat' and apache_enable_ssl | default(true) | bool
+  when: firewall_enabled | bool
+  tags: 
+    - apache
+    - security
+
+- name: Configure SELinux for Apache
+  block:
+    - name: Set SELinux context for web content
+      command: chcon -R -t httpd_sys_content_t {{ apache_document_root }}
+      changed_when: false
+      
+    - name: Allow Apache to connect to the network
+      seboolean:
+        name: httpd_can_network_connect
+        state: yes
+        persistent: yes
+  when: ansible_os_family == 'RedHat' and ansible_selinux.status == 'enabled'
+  tags: 
+    - apache
+    - security
+
+- name: Create Apache log directory
+  file:
+    path: "{{ apache_log_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  tags: apache
+
+- name: Configure logrotate for Apache logs
+  template:
+    src: apache-logrotate.conf.j2
+    dest: /etc/logrotate.d/apache
+    owner: root
+    group: root
+    mode: '0644'
+  tags: apache
+
+- name: Configure logrotate for PHP-FPM logs
+  template:
+    src: php-fpm-logrotate.conf.j2
+    dest: /etc/logrotate.d/php-fpm
+    owner: root
+    group: root
+    mode: '0644'
+  when: php_fpm_enabled | default(true) | bool
+  tags: php

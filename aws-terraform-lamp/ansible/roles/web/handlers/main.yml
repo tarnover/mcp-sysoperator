@@ -1,0 +1,61 @@
+---
+# Web role handlers
+# These handlers are used by the web role tasks
+
+- name: restart apache
+  service:
+    name: "{{ apache_service_name }}"
+    state: restarted
+  listen: restart apache
+
+- name: reload apache
+  service:
+    name: "{{ apache_service_name }}"
+    state: reloaded
+  listen: reload apache
+
+- name: restart php-fpm
+  service:
+    name: "{{ php_fpm_service_name }}"
+    state: restarted
+  when: php_fpm_enabled | default(true) | bool
+  listen: restart php-fpm
+
+- name: reload php-fpm
+  service:
+    name: "{{ php_fpm_service_name }}"
+    state: reloaded
+  when: php_fpm_enabled | default(true) | bool
+  listen: reload php-fpm
+
+- name: restart cloudwatch agent
+  service:
+    name: amazon-cloudwatch-agent
+    state: restarted
+  listen: restart cloudwatch agent
+
+- name: restart services
+  service:
+    name: "{{ item }}"
+    state: restarted
+  with_items:
+    - "{{ apache_service_name }}"
+    - "{{ php_fpm_service_name | default(omit) }}"
+  listen: restart services
+  when: item is defined
+
+- name: clear php cache
+  command: "php -r 'opcache_reset();'"
+  changed_when: true
+  ignore_errors: yes
+  listen: clear php cache
+
+- name: validate apache config
+  command: "{{ 'apachectl' if ansible_os_family == 'Debian' else 'httpd' }} -t"
+  changed_when: false
+  listen: validate apache config
+
+- name: validate php config
+  command: php -l {{ php_ini_path }}
+  changed_when: false
+  listen: validate php config

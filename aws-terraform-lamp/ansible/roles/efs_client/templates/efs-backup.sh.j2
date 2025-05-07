@@ -1,0 +1,217 @@
+#!/bin/bash
+# {{ ansible_managed }}
+# EFS backup script for {{ inventory_hostname }}
+# This file is managed by Ansible - local changes will be overwritten
+
+# Configuration
+EFS_MOUNT_POINT="{{ efs_mount_point }}"
+EFS_ID="{{ efs_id }}"
+AWS_REGION="{{ aws_region }}"
+INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+HOSTNAME=$(hostname)
+BACKUP_BUCKET="{{ efs_backup_bucket | default('') }}"
+BACKUP_PREFIX="{{ efs_backup_prefix | default('efs-backups') }}"
+BACKUP_RETENTION="{{ efs_backup_retention | default(30) }}"
+LOG_FILE="/var/log/efs-backup.log"
+DATE=$(date +%Y-%m-%d)
+TIME=$(date +%H-%M-%S)
+BACKUP_NAME="${HOSTNAME}-${EFS_ID}-${DATE}-${TIME}"
+TEMP_DIR="/tmp/efs-backup-${DATE}-${TIME}"
+EXCLUDE_PATTERNS=(
+{% if efs_backup_exclude_patterns is defined %}
+{% for pattern in efs_backup_exclude_patterns %}
+    "{{ pattern }}"
+{% endfor %}
+{% else %}
+    "*.tmp"
+    "*.temp"
+    "*.log"
+    "*/cache/*"
+    "*/tmp/*"
+    "*/logs/*"
+{% endif %}
+)
+
+# Ensure log file exists
+touch $LOG_FILE
+
+# Log with timestamp
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> $LOG_FILE
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"
+}
+
+# Send notification to SNS
+send_notification() {
+    local subject="$1"
+    local message="$2"
+    
+    if [ -n "{{ efs_backup_sns_topic | default('') }}" ]; then
+        aws sns publish \
+            --region $AWS_REGION \
+            --topic-arn "{{ efs_backup_sns_topic }}" \
+            --subject "$subject" \
+            --message "$message"
+        
+        log "Sent notification: $subject"
+    fi
+}
+
+# Check if EFS is mounted
+check_mount() {
+    if mount | grep -q "$EFS_MOUNT_POINT"; then
+        log "EFS is mounted at $EFS_MOUNT_POINT"
+        return 0
+    else
+        log "ERROR: EFS is not mounted at $EFS_MOUNT_POINT"
+        send_notification "EFS Backup Failed - $HOSTNAME" "EFS is not mounted at $EFS_MOUNT_POINT"
+        return 1
+    fi
+}
+
+# Create backup using rsync
+create_backup() {
+    log "Creating backup of EFS filesystem to $TEMP_DIR"
+    
+    # Create temporary directory
+    mkdir -p $TEMP_DIR
+    
+    # Build exclude options for rsync
+    EXCLUDE_OPTS=""
+    for pattern in "${EXCLUDE_PATTERNS[@]}"; do
+        EXCLUDE_OPTS="$EXCLUDE_OPTS --exclude=$pattern"
+    done
+    
+    # Use rsync to copy files
+    rsync -avz --delete $EXCLUDE_OPTS $EFS_MOUNT_POINT/ $TEMP_DIR/
+    
+    if [ $? -eq 0 ]; then
+        log "Rsync completed successfully"
+        return 0
+    else
+        log "ERROR: Rsync failed with exit code $?"
+        send_notification "EFS Backup Failed - $HOSTNAME" "Rsync failed with exit code $?"
+        return 1
+    fi
+}
+
+# Create tar archive
+create_archive() {
+    log "Creating tar archive of backup"
+    
+    cd /tmp
+    tar -czf "${BACKUP_NAME}.tar.gz" -C $TEMP_DIR .
+    
+    if [ $? -eq 0 ]; then
+        log "Tar archive created successfully: ${BACKUP_NAME}.tar.gz"
+        return 0
+    else
+        log "ERROR: Tar archive creation failed with exit code $?"
+        send_notification "EFS Backup Failed - $HOSTNAME" "Tar archive creation failed with exit code $?"
+        return 1
+    fi
+}
+
+# Upload backup to S3
+upload_to_s3() {
+    if [ -z "$BACKUP_BUCKET" ]; then
+        log "No S3 bucket specified, skipping upload"
+        return 0
+    fi
+    
+    log "Uploading backup to S3 bucket: $BACKUP_BUCKET"
+    
+    aws s3 cp "/tmp/${BACKUP_NAME}.tar.gz" "s3://${BACKUP_BUCKET}/${BACKUP_PREFIX}/${BACKUP_NAME}.tar.gz" \
+        --region $AWS_REGION
+    
+    if [ $? -eq 0 ]; then
+        log "Upload to S3 completed successfully"
+        return 0
+    else
+        log "ERROR: Upload to S3 failed with exit code $?"
+        send_notification "EFS Backup Failed - $HOSTNAME" "Upload to S3 failed with exit code $?"
+        return 1
+    fi
+}
+
+# Clean up old backups in S3
+cleanup_old_backups() {
+    if [ -z "$BACKUP_BUCKET" ]; then
+        log "No S3 bucket specified, skipping cleanup"
+        return 0
+    fi
+    
+    log "Cleaning up backups older than $BACKUP_RETENTION days"
+    
+    # Get list of backups older than retention period
+    OLD_BACKUPS=$(aws s3api list-objects-v2 \
+        --bucket $BACKUP_BUCKET \
+        --prefix "${BACKUP_PREFIX}/${HOSTNAME}-${EFS_ID}" \
+        --query "Contents[?LastModified<='$(date -d "-${BACKUP_RETENTION} days" --iso-8601=seconds)'].[Key]" \
+        --output text \
+        --region $AWS_REGION)
+    
+    # Delete old backups
+    for backup in $OLD_BACKUPS; do
+        log "Deleting old backup: $backup"
+        aws s3 rm "s3://${BACKUP_BUCKET}/${backup}" --region $AWS_REGION
+    done
+    
+    log "Cleanup completed"
+}
+
+# Clean up temporary files
+cleanup_temp_files() {
+    log "Cleaning up temporary files"
+    
+    rm -f "/tmp/${BACKUP_NAME}.tar.gz"
+    rm -rf $TEMP_DIR
+    
+    log "Temporary files cleaned up"
+}
+
+# Main function
+main() {
+    log "Starting EFS backup for $EFS_ID mounted at $EFS_MOUNT_POINT"
+    
+    # Check if EFS is mounted
+    if ! check_mount; then
+        log "Exiting due to mount check failure"
+        exit 1
+    fi
+    
+    # Create backup
+    if ! create_backup; then
+        log "Exiting due to backup creation failure"
+        cleanup_temp_files
+        exit 1
+    fi
+    
+    # Create archive
+    if ! create_archive; then
+        log "Exiting due to archive creation failure"
+        cleanup_temp_files
+        exit 1
+    fi
+    
+    # Upload to S3
+    if ! upload_to_s3; then
+        log "Exiting due to S3 upload failure"
+        cleanup_temp_files
+        exit 1
+    fi
+    
+    # Clean up old backups
+    cleanup_old_backups
+    
+    # Clean up temporary files
+    cleanup_temp_files
+    
+    # Send success notification
+    send_notification "EFS Backup Successful - $HOSTNAME" "EFS backup completed successfully: ${BACKUP_NAME}.tar.gz"
+    
+    log "EFS backup completed successfully"
+}
+
+# Run main function
+main

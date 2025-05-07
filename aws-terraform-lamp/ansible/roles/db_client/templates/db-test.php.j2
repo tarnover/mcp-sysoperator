@@ -1,0 +1,151 @@
+<?php
+/**
+ * {{ ansible_managed }}
+ * Database Connection Test Script for {{ inventory_hostname }}
+ * This file is managed by Ansible - local changes will be overwritten
+ */
+
+// Set error reporting
+ini_set('display_errors', {{ db_display_errors | default(false) | bool | lower }});
+error_reporting(E_ALL);
+
+// Include database connection library
+require_once '{{ app_include_path | default('/var/www/includes') }}/db-connect.php';
+
+// Use the database namespace
+use LAMP\Database\Connection;
+
+// Set content type to JSON
+header('Content-Type: application/json');
+
+// Initialize response array
+$response = [
+    'timestamp' => date('Y-m-d H:i:s'),
+    'server' => $_SERVER['SERVER_NAME'] ?? gethostname(),
+    'instance' => '{{ ansible_ec2_instance_id | default(inventory_hostname) }}',
+    'environment' => '{{ environment | default('production') }}',
+    'region' => '{{ aws_region | default('us-east-1') }}',
+    'database' => [
+        'host' => '{{ db_host }}',
+        'port' => {{ mysql_port | default('3306') }},
+        'name' => '{{ db_name }}',
+        'user' => '{{ db_user }}',
+        'ssl_enabled' => {{ db_ssl_enabled | default(true) | bool | lower }},
+    ],
+    'status' => 'unknown',
+    'message' => '',
+    'connection_time' => 0,
+    'query_time' => 0,
+    'version' => '',
+    'tables' => [],
+    'error' => null
+];
+
+try {
+    // Measure connection time
+    $start_time = microtime(true);
+    
+    // Get database connection
+    $db = Connection::getInstance();
+    
+    // Calculate connection time
+    $connection_time = microtime(true) - $start_time;
+    $response['connection_time'] = round($connection_time * 1000, 2); // Convert to milliseconds
+    
+    // Get database version
+    $start_time = microtime(true);
+    $version = Connection::getValue("SELECT VERSION()");
+    $query_time = microtime(true) - $start_time;
+    $response['query_time'] = round($query_time * 1000, 2); // Convert to milliseconds
+    
+    if ($version) {
+        $response['version'] = $version;
+        $response['status'] = 'success';
+        $response['message'] = 'Database connection successful';
+        
+        // Get table list
+        $tables = Connection::getAll("SHOW TABLES");
+        if ($tables) {
+            foreach ($tables as $table) {
+                $tableName = reset($table);
+                
+                // Get table row count
+                $count = Connection::getValue("SELECT COUNT(*) FROM `$tableName`");
+                
+                // Get table status
+                $status = Connection::getRow("SHOW TABLE STATUS LIKE '$tableName'");
+                
+                $response['tables'][] = [
+                    'name' => $tableName,
+                    'rows' => (int)$count,
+                    'engine' => $status['Engine'] ?? 'Unknown',
+                    'size' => [
+                        'data' => formatBytes($status['Data_length'] ?? 0),
+                        'index' => formatBytes($status['Index_length'] ?? 0),
+                        'total' => formatBytes(($status['Data_length'] ?? 0) + ($status['Index_length'] ?? 0))
+                    ],
+                    'collation' => $status['Collation'] ?? 'Unknown'
+                ];
+            }
+        }
+        
+        // Test a simple query
+        $start_time = microtime(true);
+        $result = Connection::getValue("SELECT 1");
+        $query_time = microtime(true) - $start_time;
+        $response['simple_query_time'] = round($query_time * 1000, 2); // Convert to milliseconds
+        
+        // Get server variables
+        $variables = Connection::getAll("SHOW VARIABLES LIKE 'max_connections'");
+        if ($variables) {
+            $response['server_variables'] = [];
+            foreach ($variables as $variable) {
+                $response['server_variables'][$variable['Variable_name']] = $variable['Value'];
+            }
+        }
+        
+        // Get server status
+        $status = Connection::getAll("SHOW GLOBAL STATUS LIKE 'Threads_connected'");
+        if ($status) {
+            $response['server_status'] = [];
+            foreach ($status as $stat) {
+                $response['server_status'][$stat['Variable_name']] = $stat['Value'];
+            }
+        }
+    } else {
+        $response['status'] = 'error';
+        $response['message'] = 'Failed to get database version';
+    }
+} catch (PDOException $e) {
+    $response['status'] = 'error';
+    $response['message'] = 'Database connection failed';
+    $response['error'] = [
+        'code' => $e->getCode(),
+        'message' => $e->getMessage()
+    ];
+    
+    // Log error
+    Connection::logError('Connection test failed: ' . $e->getMessage());
+}
+
+// Output response as JSON
+echo json_encode($response, JSON_PRETTY_PRINT);
+
+/**
+ * Format bytes to human-readable format
+ * 
+ * @param int $bytes Bytes to format
+ * @param int $precision Decimal precision
+ * @return string Formatted size
+ */
+function formatBytes($bytes, $precision = 2) {
+    $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    
+    $bytes = max($bytes, 0);
+    $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
+    $pow = min($pow, count($units) - 1);
+    
+    $bytes /= pow(1024, $pow);
+    
+    return round($bytes, $precision) . ' ' . $units[$pow];
+}
