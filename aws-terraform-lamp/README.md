@@ -98,12 +98,21 @@ graph TB
     class Client,Internet none
     
     style VPC fill:#e4f5f7,stroke:#099,stroke-width:1px
-    style "Public Subnets" fill:#c9ebef,stroke:#099,stroke-dasharray: 5 5
-    style "Private Subnets" fill:#c9ebef,stroke:#099,stroke-dasharray: 5 5
-    style "Database Subnets" fill:#c9ebef,stroke:#099,stroke-dasharray: 5 5
-    style "Compute" fill:#f4e8d9,stroke:#d67b00,stroke-width:1px
-    style "Database" fill:#e6d6e8,stroke:#9a3ca0,stroke-width:1px
-    style "Monitoring" fill:#d7e8d5,stroke:#38761d,stroke-width:1px
+    
+    %% Style definitions for subgraphs - using CSS class assignment instead of "style" directive
+    classDef publicSubnets fill:#c9ebef,stroke:#099,stroke-dasharray:5 5
+    classDef privateSubnets fill:#c9ebef,stroke:#099,stroke-dasharray:5 5
+    classDef databaseSubnets fill:#c9ebef,stroke:#099,stroke-dasharray:5 5
+    classDef compute fill:#f4e8d9,stroke:#d67b00,stroke-width:1px
+    classDef database fill:#e6d6e8,stroke:#9a3ca0,stroke-width:1px
+    classDef monitoring fill:#d7e8d5,stroke:#38761d,stroke-width:1px
+    
+    class "Public Subnets" publicSubnets
+    class "Private Subnets" privateSubnets
+    class "Database Subnets" databaseSubnets
+    class "Compute" compute
+    class "Database" database
+    class "Monitoring" monitoring
 ```
 
 This project implements a complete LAMP stack with the following components:
