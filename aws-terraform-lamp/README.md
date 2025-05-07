@@ -13,7 +13,7 @@ graph TB
     ALB[Application Load Balancer] --> ASG
     
     %% Auto Scaling Group and EC2
-    subgraph "Compute"
+    subgraph Compute
         ASG[Auto Scaling Group]
         ASG --> EC2_1[EC2 Instance 1]
         ASG --> EC2_2[EC2 Instance 2]
@@ -31,26 +31,26 @@ graph TB
     EC2_N --> RDS
     
     %% Database
-    subgraph "Database"
+    subgraph Database
         RDS[Amazon RDS MySQL\nMulti-AZ]
     end
     
     %% Networking
-    subgraph "VPC"
-        subgraph "Public Subnets"
+    subgraph VPC
+        subgraph PublicSubnets[Public Subnets]
             IGW[Internet Gateway]
             NAT[NAT Gateway]
             ALB
         end
         
-        subgraph "Private Subnets"
+        subgraph PrivateSubnets[Private Subnets]
             EC2_1
             EC2_2
             EC2_N
             EFS
         end
         
-        subgraph "Database Subnets"
+        subgraph DatabaseSubnets[Database Subnets]
             RDS
         end
     end
@@ -69,7 +69,7 @@ graph TB
     RDS --> SG_DB
     
     %% Monitoring & Management
-    subgraph "Monitoring"
+    subgraph Monitoring
         CW[CloudWatch]
         CT[CloudTrail]
         LOGS[CloudWatch Logs]
@@ -93,26 +93,17 @@ graph TB
     Client --> Internet((Internet))
     Internet --> Route53
     
-    %% Terraform Modules
-    classDef module fill:#ddf,stroke:#33a,stroke-width:2px
-    class Client,Internet none
-    
+    %% Styling
     style VPC fill:#e4f5f7,stroke:#099,stroke-width:1px
+    style PublicSubnets fill:#c9ebef,stroke:#099,stroke-dasharray:5 5
+    style PrivateSubnets fill:#c9ebef,stroke:#099,stroke-dasharray:5 5
+    style DatabaseSubnets fill:#c9ebef,stroke:#099,stroke-dasharray:5 5
+    style Compute fill:#f4e8d9,stroke:#d67b00,stroke-width:1px
+    style Database fill:#e6d6e8,stroke:#9a3ca0,stroke-width:1px
+    style Monitoring fill:#d7e8d5,stroke:#38761d,stroke-width:1px
     
-    %% Style definitions for subgraphs - using CSS class assignment instead of "style" directive
-    classDef publicSubnets fill:#c9ebef,stroke:#099,stroke-dasharray:5 5
-    classDef privateSubnets fill:#c9ebef,stroke:#099,stroke-dasharray:5 5
-    classDef databaseSubnets fill:#c9ebef,stroke:#099,stroke-dasharray:5 5
-    classDef compute fill:#f4e8d9,stroke:#d67b00,stroke-width:1px
-    classDef database fill:#e6d6e8,stroke:#9a3ca0,stroke-width:1px
-    classDef monitoring fill:#d7e8d5,stroke:#38761d,stroke-width:1px
-    
-    class "Public Subnets" publicSubnets
-    class "Private Subnets" privateSubnets
-    class "Database Subnets" databaseSubnets
-    class "Compute" compute
-    class "Database" database
-    class "Monitoring" monitoring
+    classDef default fill:#ddf,stroke:#33a,stroke-width:1px
+    class Client,Internet none
 ```
 
 This project implements a complete LAMP stack with the following components:
