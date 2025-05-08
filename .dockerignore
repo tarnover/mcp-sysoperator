@@ -22,11 +22,9 @@ aws_inventory.yml
 cloudformation_example.yml
 cloudformation_template.json
 
-# AWS LAMP stack example
-aws-lamp-stack/
-
-# AWS Terraform LAMP example
-aws-terraform-lamp/
+# AWS examples
+demos/aws-lamp-stack/
+demos/aws-terraform-lamp/
 
 # Examples
 examples/

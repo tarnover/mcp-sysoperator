@@ -140,7 +140,7 @@ This project implements a complete LAMP stack with the following components:
 ## Project Structure
 
 ```
-aws-terraform-lamp/
+demos/aws-terraform-lamp/
 ├── terraform/                  # Terraform infrastructure code
 │   ├── modules/                # Modular Terraform components
 │   │   ├── networking/         # VPC, subnets, NAT, IGW

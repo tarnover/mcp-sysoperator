@@ -95,7 +95,7 @@ graph TD
 ## Directory Structure
 
 ```
-aws-lamp-stack/
+demos/aws-lamp-stack/
 ├── ansible.cfg                  # Ansible configuration
 ├── inventory/                   # Inventory files
 │   ├── aws_hosts.yml            # AWS inventory

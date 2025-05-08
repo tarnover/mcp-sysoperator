@@ -67,7 +67,7 @@ if [ ${PIPESTATUS[0]} -eq 0 ]; then
   fi
   
   echo "==================="
-  echo "To clean up all resources, run: ./aws-lamp-stack/cleanup_aws.sh"
+  echo "To clean up all resources, run: ./demos/aws-lamp-stack/cleanup_aws.sh"
 else
   echo "Deployment failed. Check logs/aws_deployment.log for details."
 fi
