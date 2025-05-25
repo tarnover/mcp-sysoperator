@@ -156,7 +156,7 @@ class SysOperatorServer {
     console.error(`Using default inventory path: ${this.defaultInventoryPath}`); // Log the path being used
     this.server = new Server(
       {
-        name: 'mcp-sysoperator',
+        name: 'sysoperator',
         version: VERSION,
       },
       {
