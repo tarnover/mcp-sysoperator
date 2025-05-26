@@ -1,5 +1,3 @@
-import { ErrorCode } from '@modelcontextprotocol/sdk/types.js';
-
 export class AnsibleError extends Error {
   constructor(message: string) {
     super(message);
@@ -78,17 +76,29 @@ export function isAnsibleError(error: unknown): error is AnsibleError {
 }
 
 export function formatAnsibleError(error: AnsibleError): string {
-  let message = `Ansible Error: ${error.message}`;
-  
   if (error instanceof AnsibleExecutionError && error.stderr) {
-    message = `Execution Error: ${error.message}\nDetails: ${error.stderr}`;
-  } else if (error instanceof AnsiblePlaybookNotFoundError) {
-    message = `Playbook Not Found: ${error.message}`;
-  } else if (error instanceof AnsibleInventoryNotFoundError) {
-    message = `Inventory Not Found: ${error.message}`;
-  } else if (error instanceof AnsibleNotInstalledError) {
-    message = `Ansible Not Installed: ${error.message}`;
+    return `AnsibleExecutionError: ${error.message}\nDetails: ${error.stderr}`;
   }
 
-  return message;
+  // For other errors, use their specific 'name' and 'message' properties
+  // This avoids redundancy if error.message already contains a good description.
+  const errorName = error.name; 
+
+  switch (errorName) {
+    case 'AnsiblePlaybookNotFoundError':
+    case 'AnsibleInventoryNotFoundError':
+    case 'AnsibleNotInstalledError':
+    case 'AwsCredentialsError':
+    case 'AwsCliNotInstalledError':
+    case 'AwsModuleNotFoundError':
+    case 'TerraformNotInstalledError':
+    case 'TflocalNotInstalledError':
+      return `${errorName}: ${error.message}`;
+    case 'AnsibleError': // Generic base, if not caught by more specific types above
+      return `AnsibleError: ${error.message}`;
+    default:
+      // Fallback for any other error that might somehow be passed in,
+      // or if new AnsibleError subtypes are added without updating this function.
+      return `Error: ${error.message}`;
+  }
 }

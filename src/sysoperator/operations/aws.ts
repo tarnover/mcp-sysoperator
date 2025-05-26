@@ -963,7 +963,7 @@ ${formatYamlParams({
 export async function lambdaOperations(args: LambdaOptions): Promise<string> {
   await verifyAwsCredentials();
 
-  const { action, region, name, zipFile, s3Bucket, s3Key, functionCode, runtime, handler, role, description, timeout, memorySize, environment, tags, payload } = args;
+  const { action, region, name, zipFile, s3Bucket, s3Key, functionCode, runtime, handler, role, description, timeout, memorySize, environment, tags, payload, invocationType } = args;
 
   const tempFiles: { filename: string, content: string }[] = [];
   let codeParams = '';
@@ -1053,7 +1053,7 @@ ${formatYamlParams({
       amazon.aws.lambda_invoke:
         region: "${region}"
         function_name: "${name}"
-        invocation_type: RequestResponse # Or Event, DryRun
+        invocation_type: "${invocationType || 'RequestResponse'}"
 ${formatYamlParams({ payload })}
       register: lambda_invoke
     

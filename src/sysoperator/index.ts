@@ -156,7 +156,7 @@ class SysOperatorServer {
     console.error(`Using default inventory path: ${this.defaultInventoryPath}`); // Log the path being used
     this.server = new Server(
       {
-        name: 'mcp-sysoperator',
+        name: 'sysoperator',
         version: VERSION,
       },
       {
@@ -252,9 +252,6 @@ class SysOperatorServer {
     // Handle tool calls using the definitions map
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       try {
-        // First verify Ansible is installed
-        await verifyAnsibleInstalled();
-
         const toolName = request.params.name;
         const toolDef = toolDefinitions[toolName];
 

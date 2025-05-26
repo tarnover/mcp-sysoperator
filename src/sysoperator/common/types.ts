@@ -184,7 +184,8 @@ export const LambdaSchema = z.object({
   memorySize: z.number().optional(),
   environment: z.record(z.string()).optional(),
   tags: z.record(z.string()).optional(),
-  payload: z.any().optional() // Added based on usage in aws.ts. Payload structure varies.
+  payload: z.any().optional(), // Added based on usage in aws.ts. Payload structure varies.
+  invocationType: z.enum(['RequestResponse', 'Event', 'DryRun']).optional(),
 });
 
 export type LambdaOptions = z.infer<typeof LambdaSchema>;

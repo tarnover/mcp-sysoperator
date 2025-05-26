@@ -24,7 +24,7 @@ The Terraform operations are exposed through the `terraform` tool in the MCP Sys
 
 ```
 <use_mcp_tool>
-<server_name>ansible</server_name>
+<server_name>sysoperator</server_name>
 <tool_name>terraform</tool_name>
 <arguments>
 {
@@ -39,7 +39,7 @@ The Terraform operations are exposed through the `terraform` tool in the MCP Sys
 
 ```
 <use_mcp_tool>
-<server_name>ansible</server_name>
+<server_name>sysoperator</server_name>
 <tool_name>terraform</tool_name>
 <arguments>
 {
@@ -63,7 +63,7 @@ The Terraform operations are exposed through the `terraform` tool in the MCP Sys
 
 ```
 <use_mcp_tool>
-<server_name>ansible</server_name>
+<server_name>sysoperator</server_name>
 <tool_name>terraform</tool_name>
 <arguments>
 {
@@ -80,7 +80,7 @@ The Terraform operations are exposed through the `terraform` tool in the MCP Sys
 
 ```
 <use_mcp_tool>
-<server_name>ansible</server_name>
+<server_name>sysoperator</server_name>
 <tool_name>terraform</tool_name>
 <arguments>
 {
