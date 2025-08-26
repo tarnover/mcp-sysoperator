@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/tarnover-mcp-sysoperator-badge.png)](https://mseep.ai/app/tarnover-mcp-sysoperator)
+
 <p align="center">
   <img src="https://www.tarnover.com/assets/images/logo.png" alt="SysOperator" width="500">
 </p>
