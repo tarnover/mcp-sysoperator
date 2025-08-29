@@ -13,6 +13,10 @@ __All code in demos generated using Claude 3.7 Sonnet (via OpenRouter), Cline, a
 - **[AWS Terraform LAMP](demos/aws-terraform-lamp)** - Terraform and Ansible code to reply a LAMP stack
 
 
+<a href="https://glama.ai/mcp/servers/@tarnover/mcp-ansible">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@tarnover/mcp-ansible/badge" alt="Ansible Server MCP server" />
+</a>
+
 ## Features
 
 - **Run Ansible Playbooks**: Execute Ansible playbooks with support for parameters like inventory, extra vars, tags, and limits
