@@ -1,6 +1,6 @@
 import { AnsibleExecutionError } from '../common/errors.js';
 import { RunPlaybookOptions, CheckSyntaxOptions, ListTasksOptions } from '../common/types.js';
-import { execAsync, validatePlaybookPath, validateInventoryPath } from '../common/utils.js';
+import { runCommand, validatePlaybookPath, validateInventoryPath } from '../common/utils.js';
 
 /**
  * Runs an Ansible playbook
@@ -14,33 +14,26 @@ export async function runPlaybook(options: RunPlaybookOptions): Promise<string> 
   const playbookPath = validatePlaybookPath(options.playbook);
   const inventoryPath = validateInventoryPath(options.inventory);
   
-  // Build command
-  let command = `ansible-playbook ${playbookPath}`;
-  
-  // Add inventory if specified
+  const args = [playbookPath];
+
   if (inventoryPath) {
-    command += ` -i ${inventoryPath}`;
+    args.push('-i', inventoryPath);
   }
-  
-  // Add extra vars if specified
+
   if (options.extraVars && Object.keys(options.extraVars).length > 0) {
-    const extraVarsJson = JSON.stringify(options.extraVars);
-    command += ` --extra-vars '${extraVarsJson}'`;
+    args.push('--extra-vars', JSON.stringify(options.extraVars));
   }
-  
-  // Add tags if specified
+
   if (options.tags) {
-    command += ` --tags "${options.tags}"`;
+    args.push('--tags', options.tags);
   }
-  
-  // Add limit if specified
+
   if (options.limit) {
-    command += ` --limit "${options.limit}"`;
+    args.push('--limit', options.limit);
   }
 
   try {
-    // Execute command
-    const { stdout, stderr } = await execAsync(command);
+    const { stdout, stderr } = await runCommand('ansible-playbook', args);
     return stdout || 'Playbook executed successfully (no output)';
   } catch (error) {
     // Handle exec error
@@ -62,12 +55,8 @@ export async function runPlaybook(options: RunPlaybookOptions): Promise<string> 
 export async function checkSyntax(options: CheckSyntaxOptions): Promise<string> {
   const playbookPath = validatePlaybookPath(options.playbook);
   
-  // Build command with syntax-check option
-  const command = `ansible-playbook ${playbookPath} --syntax-check`;
-
   try {
-    // Execute command
-    const { stdout, stderr } = await execAsync(command);
+    const { stdout, stderr } = await runCommand('ansible-playbook', [playbookPath, '--syntax-check']);
     return stdout || 'Syntax check passed (no issues found)';
   } catch (error) {
     // Handle exec error - in this case, a syntax error
@@ -89,12 +78,8 @@ export async function checkSyntax(options: CheckSyntaxOptions): Promise<string> 
 export async function listTasks(options: ListTasksOptions): Promise<string> {
   const playbookPath = validatePlaybookPath(options.playbook);
   
-  // Build command with list-tasks option
-  const command = `ansible-playbook ${playbookPath} --list-tasks`;
-
   try {
-    // Execute command
-    const { stdout, stderr } = await execAsync(command);
+    const { stdout, stderr } = await runCommand('ansible-playbook', [playbookPath, '--list-tasks']);
     return stdout || 'No tasks found in playbook';
   } catch (error) {
     // Handle exec error

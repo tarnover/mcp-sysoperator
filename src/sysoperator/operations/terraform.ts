@@ -1,6 +1,6 @@
 import { AnsibleExecutionError } from '../common/errors.js';
 import { 
-  execAsync, 
+  runCommand,
   createTempDirectory, 
   writeTempFile, 
   cleanupTempDirectory,
@@ -18,25 +18,15 @@ export { TerraformSchema } from '../common/types.js';
  * @param prefix The prefix to add before each parameter (e.g., -var, -var-file)
  * @returns Formatted parameter string
  */
-function formatCommandParams(params: Record<string, any> | undefined, prefix: string): string {
+function appendCommandParams(args: string[], params: Record<string, any> | undefined, prefix: string): void {
   if (!params || Object.keys(params).length === 0) {
-    return '';
+    return;
   }
-  
-  return Object.entries(params)
-    .map(([key, value]) => {
-      if (typeof value === 'string') {
-        // For string values, wrap in quotes
-        return `${prefix} ${key}="${value}"`;
-      } else if (typeof value === 'object') {
-        // For objects/arrays, convert to JSON and wrap in quotes
-        return `${prefix} ${key}='${JSON.stringify(value)}'`;
-      } else {
-        // For numbers, booleans, etc.
-        return `${prefix} ${key}=${value}`;
-      }
-    })
-    .join(' ');
+
+  Object.entries(params).forEach(([key, value]) => {
+    const serialized = typeof value === 'object' ? JSON.stringify(value) : String(value);
+    args.push(prefix, `${key}=${serialized}`);
+  });
 }
 
 /**
@@ -71,23 +61,14 @@ export async function terraformOperations(options: TerraformOptions): Promise<st
     await verifyTerraformInstalled();
   }
 
-  // Base command with terraform/tflocal and action
-  let command = `cd "${workingDir}" && ${terraformCmd} ${action}`;
+  const commandArgs: string[] = [action];
 
-  // Add var files if specified
   if (varFiles && varFiles.length > 0) {
-    command += ' ' + varFiles.map(file => `-var-file="${file}"`).join(' ');
+    varFiles.forEach((file) => commandArgs.push(`-var-file=${file}`));
   }
 
-  // Add vars if specified
-  if (vars && Object.keys(vars).length > 0) {
-    command += ' ' + formatCommandParams(vars, '-var');
-  }
-
-  // Add backend config if specified
-  if (backendConfig && Object.keys(backendConfig).length > 0) {
-    command += ' ' + formatCommandParams(backendConfig, '-backend-config');
-  }
+  appendCommandParams(commandArgs, vars, '-var');
+  appendCommandParams(commandArgs, backendConfig, '-backend-config');
 
   // Add specific parameters based on action
   switch (action) {
@@ -99,58 +80,58 @@ export async function terraformOperations(options: TerraformOptions): Promise<st
     case 'destroy':
       // Add auto-approve if specified
       if (autoApprove) {
-        command += ' -auto-approve';
+        commandArgs.push('-auto-approve');
       }
       
       // Add refresh option
       if (refresh !== undefined) {
-        command += ` -refresh=${refresh ? 'true' : 'false'}`;
+        commandArgs.push(`-refresh=${refresh ? 'true' : 'false'}`);
       }
       
       // Add state file if specified
       if (state) {
-        command += ` -state="${state}"`;
+        commandArgs.push(`-state=${state}`);
       }
       
       // Add targets if specified
       if (target && target.length > 0) {
-        command += ' ' + target.map(t => `-target="${t}"`).join(' ');
+        target.forEach((t) => commandArgs.push(`-target=${t}`));
       }
       
       // Add lock timeout if specified
       if (lockTimeout) {
-        command += ` -lock-timeout=${lockTimeout}`;
+        commandArgs.push(`-lock-timeout=${lockTimeout}`);
       }
       break;
       
     case 'plan':
       // Add refresh option
       if (refresh !== undefined) {
-        command += ` -refresh=${refresh ? 'true' : 'false'}`;
+        commandArgs.push(`-refresh=${refresh ? 'true' : 'false'}`);
       }
       
       // Add state file if specified
       if (state) {
-        command += ` -state="${state}"`;
+        commandArgs.push(`-state=${state}`);
       }
       
       // Add targets if specified
       if (target && target.length > 0) {
-        command += ' ' + target.map(t => `-target="${t}"`).join(' ');
+        target.forEach((t) => commandArgs.push(`-target=${t}`));
       }
       
       // Add lock timeout if specified
       if (lockTimeout) {
-        command += ` -lock-timeout=${lockTimeout}`;
+        commandArgs.push(`-lock-timeout=${lockTimeout}`);
       }
       break;
       
     case 'workspace':
       // Add workspace name if specified
       if (workspace) {
-        command += ` select ${workspace}`;
+        commandArgs.push('select', workspace);
       } else {
-        command += ' list'; // Default to listing workspaces if no name is provided
+        commandArgs.push('list'); // Default to listing workspaces if no name is provided
       }
       break;
       
@@ -158,11 +139,11 @@ export async function terraformOperations(options: TerraformOptions): Promise<st
   }
 
   // For debug purposes
-  console.log(`Executing Terraform command: ${command}`);
+  console.log('Executing Terraform command:', terraformCmd, commandArgs.join(' '));
 
   try {
     // Execute the command
-    const { stdout, stderr } = await execAsync(command);
+    const { stdout, stderr } = await runCommand(terraformCmd, commandArgs, { cwd: workingDir });
     
     // Adjust output based on action
     switch (action) {

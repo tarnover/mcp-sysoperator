@@ -1,6 +1,6 @@
 import { AnsibleExecutionError } from '../common/errors.js';
 import { ListInventoryOptions } from '../common/types.js';
-import { execAsync, validateInventoryPath } from '../common/utils.js';
+import { runCommand, validateInventoryPath } from '../common/utils.js';
 
 /**
  * Lists all hosts and groups in an Ansible inventory
@@ -12,19 +12,10 @@ import { execAsync, validateInventoryPath } from '../common/utils.js';
 export async function listInventory(options: ListInventoryOptions): Promise<string> {
   const inventoryPath = validateInventoryPath(options.inventory);
   
-  // Build command
-  let command = 'ansible-inventory';
-  
-  // Add inventory if specified
-  if (inventoryPath) {
-    command += ` -i ${inventoryPath}`;
-  }
-  
-  command += ' --list';
+  const args = inventoryPath ? ['-i', inventoryPath, '--list'] : ['--list'];
 
   try {
-    // Execute command
-    const { stdout, stderr } = await execAsync(command);
+    const { stdout, stderr } = await runCommand('ansible-inventory', args);
     
     try {
       // Try to parse as JSON for better formatting
