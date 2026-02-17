@@ -1,7 +1,7 @@
 import { existsSync } from 'fs';
 import { mkdtemp, writeFile, rm } from 'fs/promises';
 import { resolve, join } from 'path';
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import { tmpdir } from 'os';
 import { 
@@ -15,6 +15,22 @@ import {
 } from './errors.js';
 
 export const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
+
+const DEFAULT_EXEC_TIMEOUT_MS = 5 * 60 * 1000;
+const DEFAULT_EXEC_MAX_BUFFER = 10 * 1024 * 1024;
+
+export async function runCommand(
+  command: string,
+  args: string[] = [],
+  options?: { cwd?: string }
+): Promise<{ stdout: string; stderr: string }> {
+  return execFileAsync(command, args, {
+    cwd: options?.cwd,
+    timeout: DEFAULT_EXEC_TIMEOUT_MS,
+    maxBuffer: DEFAULT_EXEC_MAX_BUFFER
+  });
+}
 
 /**
  * Validates a playbook path and returns the absolute path

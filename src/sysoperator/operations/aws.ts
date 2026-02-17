@@ -1,6 +1,6 @@
 import { AnsibleExecutionError } from '../common/errors.js';
 import { 
-  execAsync, 
+  runCommand, 
   createTempDirectory, 
   writeTempFile, 
   cleanupTempDirectory 
@@ -77,7 +77,6 @@ const formatYamlParams = (params: Record<string, any>, indentation: number = 6):
 async function executeAwsPlaybook(
   operationName: string, 
   playbookContent: string, 
-  extraParams: string = '',
   tempFiles: { filename: string, content: string }[] = [] // For additional files like templates, policies
 ): Promise<string> {
   let tempDir: string | undefined;
@@ -93,12 +92,11 @@ async function executeAwsPlaybook(
       await writeTempFile(tempDir, file.filename, file.content);
     }
 
-    // Build the command
-    const command = `ansible-playbook ${playbookPath} ${extraParams}`;
-    console.error(`Executing: ${command}`);
+    const args = [playbookPath];
 
-    // Execute the playbook asynchronously
-    const { stdout, stderr } = await execAsync(command);
+    console.error('Executing ansible-playbook with args:', args.join(' '));
+
+    const { stdout, stderr } = await runCommand('ansible-playbook', args);
     
     // Return stdout, or a success message if stdout is empty
     return stdout || `${operationName} completed successfully (no output).`;
@@ -510,7 +508,7 @@ ${formatYamlParams({
   }
   
   // Execute the generated playbook, passing template body if needed
-  return executeAwsPlaybook(`cloudformation-${action}`, playbookContent, '', tempFiles);
+  return executeAwsPlaybook(`cloudformation-${action}`, playbookContent, tempFiles);
 }
 
 /**
@@ -637,7 +635,7 @@ ${formatYamlParams({ path })}
   }
   
   // Execute the generated playbook, passing policy docs if needed
-  return executeAwsPlaybook(`iam-${action}`, playbookContent, '', tempFiles);
+  return executeAwsPlaybook(`iam-${action}`, playbookContent, tempFiles);
 }
 
 /**
@@ -1083,17 +1081,15 @@ ${formatYamlParams({ payload })}
     if (zipPath && tempFiles.some(f => f.filename === 'lambda_function.py')) {
       const codeFilePath = `${tempDir}/lambda_function.py`;
       const zipFilePath = `${tempDir}/${zipPath}`;
-      const zipCommand = `zip -j "${zipFilePath}" "${codeFilePath}"`; 
-      console.error(`Executing: ${zipCommand}`);
-      await execAsync(zipCommand, { cwd: tempDir }); // Run zip in the temp directory
+      const zipArgs = ['-j', zipFilePath, codeFilePath];
+      console.error('Executing zip with args:', zipArgs.join(' '));
+      await runCommand('zip', zipArgs, { cwd: tempDir }); // Run zip in the temp directory
     }
 
-    // Build the final Ansible command
-    const command = `ansible-playbook ${playbookPath}`;
-    console.error(`Executing: ${command}`);
+    const commandArgs = [playbookPath];
+    console.error('Executing ansible-playbook with args:', commandArgs.join(' '));
 
-    // Execute the playbook asynchronously
-    const { stdout, stderr } = await execAsync(command);
+    const { stdout, stderr } = await runCommand('ansible-playbook', commandArgs);
     
     return stdout || `Lambda ${action} completed successfully (no output).`;
 
@@ -1163,14 +1159,11 @@ ${formatYamlParams(compose, 2)}`; // Indent level 2 for compose
     const testPlaybookPath = await writeTempFile(tempDir, 'test_playbook.yml', testPlaybookContent);
 
     // Execute ansible-inventory --list first to show the structure
-    const listCommand = `ansible-inventory -i ${inventoryPath} --list`;
-    console.error(`Executing: ${listCommand}`);
-    const listResult = await execAsync(listCommand);
+    console.error('Executing ansible-inventory with args:', `-i ${inventoryPath} --list`);
+    const listResult = await runCommand('ansible-inventory', ['-i', inventoryPath, '--list']);
 
-    // Execute the test playbook using the dynamic inventory
-    const runCommand = `ansible-playbook -i ${inventoryPath} ${testPlaybookPath}`;
-    console.error(`Executing: ${runCommand}`);
-    const runResult = await execAsync(runCommand);
+    console.error('Executing ansible-playbook with args:', `-i ${inventoryPath} ${testPlaybookPath}`);
+    const runResult = await runCommand('ansible-playbook', ['-i', inventoryPath, testPlaybookPath]);
 
     return `Dynamic Inventory (${inventoryPath}) Content:\n${inventoryContent}\n\nInventory List Output:\n${listResult.stdout}\n\nPlaybook Test Output:\n${runResult.stdout}`;
 

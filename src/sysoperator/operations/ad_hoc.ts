@@ -1,6 +1,6 @@
 import { AnsibleExecutionError } from '../common/errors.js';
 import { RunAdHocOptions } from '../common/types.js';
-import { execAsync, validateInventoryPath } from '../common/utils.js';
+import { runCommand, validateInventoryPath } from '../common/utils.js';
 
 /**
  * Runs an Ansible ad-hoc command
@@ -12,36 +12,26 @@ import { execAsync, validateInventoryPath } from '../common/utils.js';
 export async function runAdHoc(options: RunAdHocOptions): Promise<string> {
   const inventoryPath = validateInventoryPath(options.inventory);
   
-  // Build command
-  let command = `ansible ${options.pattern}`;
-  
-  // Add module
-  command += ` -m ${options.module}`;
-  
-  // Add module args if specified
+  const args = [options.pattern, '-m', options.module];
+
   if (options.args) {
-    command += ` -a "${options.args}"`;
+    args.push('-a', options.args);
   }
-  
-  // Add inventory if specified
+
   if (inventoryPath) {
-    command += ` -i ${inventoryPath}`;
+    args.push('-i', inventoryPath);
   }
-  
-  // Add become flag if needed
+
   if (options.become) {
-    command += ' --become';
+    args.push('--become');
   }
-  
-  // Add extra vars if specified
+
   if (options.extra_vars && Object.keys(options.extra_vars).length > 0) {
-    const extraVarsJson = JSON.stringify(options.extra_vars);
-    command += ` --extra-vars '${extraVarsJson}'`;
+    args.push('--extra-vars', JSON.stringify(options.extra_vars));
   }
 
   try {
-    // Execute command
-    const { stdout, stderr } = await execAsync(command);
+    const { stdout, stderr } = await runCommand('ansible', args);
     return stdout || 'Command executed successfully (no output)';
   } catch (error) {
     // Handle exec error
