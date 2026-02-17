@@ -47,7 +47,10 @@ export async function terraformOperations(options: TerraformOptions): Promise<st
     target,
     lockTimeout,
     refresh,
-    workspace
+    workspace,
+    workspaceSubcommand,
+    planFile,
+    json
   } = options;
   
   // Determine if we should use terraform or tflocal command
@@ -127,11 +130,29 @@ export async function terraformOperations(options: TerraformOptions): Promise<st
       break;
       
     case 'workspace':
-      // Add workspace name if specified
-      if (workspace) {
-        commandArgs.push('select', workspace);
+      if (workspaceSubcommand === 'list') {
+        commandArgs.push('list');
+      } else if (workspace) {
+        commandArgs.push(workspaceSubcommand ?? 'select', workspace);
       } else {
-        commandArgs.push('list'); // Default to listing workspaces if no name is provided
+        throw new AnsibleExecutionError(
+          `Terraform execution failed for ${action}: workspace name is required for workspace ${workspaceSubcommand} command`
+        );
+      }
+      break;
+
+    case 'fmt':
+      if (json) {
+        commandArgs.push('-json');
+      }
+      break;
+
+    case 'show':
+      if (json) {
+        commandArgs.push('-json');
+      }
+      if (planFile) {
+        commandArgs.push(planFile);
       }
       break;
       
@@ -148,6 +169,7 @@ export async function terraformOperations(options: TerraformOptions): Promise<st
     // Adjust output based on action
     switch (action) {
       case 'output':
+      case 'show':
         // Try to parse JSON output
         try {
           const outputJson = JSON.parse(stdout);

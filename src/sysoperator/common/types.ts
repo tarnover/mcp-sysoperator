@@ -1,8 +1,22 @@
 import { z } from 'zod';
 
 // Terraform Actions
-export const TerraformActionEnum = z.enum(['init', 'plan', 'apply', 'destroy', 'validate', 'output', 'import', 'workspace']);
+export const TerraformActionEnum = z.enum([
+  'init',
+  'plan',
+  'apply',
+  'destroy',
+  'validate',
+  'output',
+  'import',
+  'workspace',
+  'fmt',
+  'show'
+]);
 export type TerraformAction = z.infer<typeof TerraformActionEnum>;
+
+export const TerraformWorkspaceSubcommandEnum = z.enum(['list', 'select', 'new', 'delete']);
+export type TerraformWorkspaceSubcommand = z.infer<typeof TerraformWorkspaceSubcommandEnum>;
 
 // AWS Actions
 export const EC2InstanceActionEnum = z.enum(['list', 'create', 'terminate', 'start', 'stop']);
@@ -282,7 +296,10 @@ export const TerraformSchema = z.object({
   target: z.array(z.string()).optional(),
   lockTimeout: z.string().optional(),
   refresh: z.boolean().optional().default(true),
-  workspace: z.string().optional()
+  workspace: z.string().optional(),
+  workspaceSubcommand: TerraformWorkspaceSubcommandEnum.optional().default('list'),
+  planFile: z.string().optional(),
+  json: z.boolean().optional().default(true)
 });
 
 export type TerraformOptions = z.infer<typeof TerraformSchema>;

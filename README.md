@@ -21,13 +21,13 @@ __All code in demos generated using Claude 3.7 Sonnet (via OpenRouter), Cline, a
 - **List Tasks**: Preview tasks that would be executed by a playbook
 - **Access Default Inventory**: Access the default Ansible inventory file via resource API
 - **AWS Integration**: Manage AWS resources (EC2, S3, VPC, CloudFormation, etc.)
-- **Terraform Support**: Execute Terraform commands (init, plan, apply, destroy, output, etc.)
+- **Terraform Support**: Execute Terraform commands (init, plan, apply, destroy, output, fmt, show, workspace, etc.)
 - **tflocal Integration**: Test Terraform configurations with LocalStack for local cloud development
 - **LocalStack Support**: Test AWS operations locally using LocalStack without real AWS credentials
 
 ## Requirements
 
-- Node.js 18 or higher
+- Node.js 20 or higher
 - npm or yarn
 - Ansible installed and in PATH
 - @modelcontextprotocol/sdk (installed automatically)
@@ -240,6 +240,48 @@ Once installed and configured, the MCP server provides the following tools to th
     "instance_type": "t2.micro",
     "region": "us-west-2"
   }
+}
+</arguments>
+</use_mcp_tool>
+```
+
+### 10. Terraform Workspace, Fmt, and Show
+
+```
+<use_mcp_tool>
+<server_name>sysoperator</server_name>
+<tool_name>terraform</tool_name>
+<arguments>
+{
+  "action": "workspace",
+  "workingDir": "/path/to/terraform/project",
+  "workspaceSubcommand": "select",
+  "workspace": "staging"
+}
+</arguments>
+</use_mcp_tool>
+
+<use_mcp_tool>
+<server_name>sysoperator</server_name>
+<tool_name>terraform</tool_name>
+<arguments>
+{
+  "action": "fmt",
+  "workingDir": "/path/to/terraform/project",
+  "json": true
+}
+</arguments>
+</use_mcp_tool>
+
+<use_mcp_tool>
+<server_name>sysoperator</server_name>
+<tool_name>terraform</tool_name>
+<arguments>
+{
+  "action": "show",
+  "workingDir": "/path/to/terraform/project",
+  "planFile": "tfplan",
+  "json": true
 }
 </arguments>
 </use_mcp_tool>

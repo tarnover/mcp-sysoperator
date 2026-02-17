@@ -28,7 +28,7 @@ The Terraform operations are exposed through the `terraform` tool in the MCP Sys
 <tool_name>terraform</tool_name>
 <arguments>
 {
-  "action": "init|plan|apply|destroy|validate|output|import|workspace",
+  "action": "init|plan|apply|destroy|validate|output|import|workspace|fmt|show",
   "workingDir": "/path/to/terraform/project"
 }
 </arguments>
@@ -113,7 +113,11 @@ The Terraform operations module is implemented in `terraform.ts` and works by:
 3. Executing the command in the specified working directory
 4. Parsing and returning the output
 
-Special handling is provided for certain commands like `output`, which attempts to parse the JSON output to provide structured data.
+Special handling is provided for `output` and `show`, which attempt to parse JSON output for structured responses.
+
+For workspace operations, use `workspaceSubcommand` (`list`, `select`, `new`, `delete`) and provide `workspace` when required.
+
+For `show`, you can optionally pass `planFile` and set `json` to `false` to return the native CLI text output.
 
 ## Development Workflow
 
