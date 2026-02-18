@@ -29,6 +29,9 @@ export type Route53Action = z.infer<typeof Route53ActionEnum>;
 export const ELBActionEnum = z.enum(['list', 'create', 'delete']);
 export type ELBAction = z.infer<typeof ELBActionEnum>;
 
+const ELBListenerSchema = z.object({}).passthrough();
+const ELBTargetGroupSchema = z.object({}).passthrough();
+
 export const LambdaActionEnum = z.enum(['list', 'create', 'update', 'delete', 'invoke']);
 export type LambdaAction = z.infer<typeof LambdaActionEnum>;
 
@@ -159,10 +162,10 @@ export const ELBSchema = z.object({
   scheme: z.string().optional(),
   subnets: z.array(z.string()).optional(),
   securityGroups: z.array(z.string()).optional(),
-  listeners: z.array(z.any()).optional(), // Consider defining a more specific listener schema
+  listeners: z.array(ELBListenerSchema).optional(),
   healthCheck: z.any().optional(), // Consider defining a more specific health check schema
   tags: z.record(z.string()).optional(),
-  targetGroups: z.array(z.any()).optional() // Added based on usage in aws.ts. Consider a specific schema.
+  targetGroups: z.array(ELBTargetGroupSchema).optional()
 });
 
 export type ELBOptions = z.infer<typeof ELBSchema>;
